@@ -38,8 +38,9 @@ dependencies = [
 dev = ["pytest>=7", "build", "twine"]
 
 [project.urls]
-Homepage  = "https://github.com/yourname/less-tokens"
-Issues    = "https://github.com/yourname/less-tokens/issues"
+Homepage   = "https://github.com/shaminchokshi/less-tokens"
+Issues     = "https://github.com/shaminchokshi/less-tokens/issues"
+Repository = "https://github.com/shaminchokshi/less-tokens"
 
 [tool.setuptools.packages.find]
 where = ["."]
