@@ -1,0 +1,47 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "less-tokens"
+version         = "0.1.0"
+description     = "Deterministic, training-free lexical compression for LLM prompts."
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.9"
+authors         = [{ name = "Shamin Chokshi", email = "shaminchokshi2000@gail.com" }]
+keywords        = ["llm", "prompt", "compression", "tokens", "nlp", "openai", "tokenization", "shortening", "Less", "reduce", ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "nltk>=3.8",
+    "tiktoken>=0.6.0",
+    "rouge-score>=0.1.2",
+    "sentence-transformers>=2.5.0",
+    "bert-score>=0.3.13",
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "build", "twine"]
+
+[project.urls]
+Homepage  = "https://github.com/yourname/less-tokens"
+Issues    = "https://github.com/yourname/less-tokens/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["less_tokens*"]
+exclude = ["tests*"]
