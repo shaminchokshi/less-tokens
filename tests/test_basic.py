@@ -112,3 +112,97 @@ def test_compare_returns_correct_shape():
 def test_compare_rejects_non_string_inputs():
     with pytest.raises(TypeError):
         compare(123, "b", "c", "d")
+
+
+# ---------------------------------------------------------------------------
+# Structured compression tests
+# ---------------------------------------------------------------------------
+import asyncio
+from less_tokens import (compress_structured, acompress, acompress_structured,
+                         CAREFUL_FLAGS, VALID_LEVELS)
+
+
+def test_structured_protected_zone_is_verbatim():
+    """A protected zone must be returned byte-for-byte."""
+    schema = '{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}'
+    result = compress_structured(
+        instruction="I was wondering if you could analyse this review.",
+        output_format=schema,
+        remove_filler_phrases=1,
+        return_detail=True,
+    )
+    protected = [z for z in result["zones"] if z["level"] == "protected"][0]
+    assert schema in protected["compressed"]
+    assert protected["original_len"] == protected["compressed_len"] or schema in protected["compressed"]
+
+
+def test_structured_careful_keeps_negations():
+    """Careful zones must never drop negations."""
+    result = compress_structured(
+        zones=[("Do not fabricate. Never guess.", "careful")],
+    )
+    assert "not" in result.lower()
+    assert "never" in result.lower()
+
+
+def test_structured_free_zone_compresses():
+    """Free zone with filler phrase should shrink."""
+    result = compress_structured(
+        zones=[("I was wondering if you could explain this", "free")],
+        free_flags={"remove_filler_phrases": 1},
+    )
+    assert "wondering" not in result.lower()
+
+
+def test_structured_explicit_zones_ordering():
+    out = compress_structured(zones=[
+        ("First part here.", "protected"),
+        ("Second part here.", "protected"),
+    ])
+    assert out.index("First") < out.index("Second")
+
+
+def test_structured_rejects_bad_level():
+    import pytest
+    with pytest.raises(ValueError):
+        compress_structured(zones=[("text", "banana")])
+
+
+def test_structured_requires_something():
+    import pytest
+    with pytest.raises(ValueError):
+        compress_structured()
+
+
+def test_acompress_runs():
+    async def go():
+        return await acompress("I was wondering if you could help",
+                              remove_filler_phrases=1)
+    result = asyncio.run(go())
+    assert "wondering" not in result.lower()
+
+
+def test_acompress_structured_runs():
+    async def go():
+        return await acompress_structured(
+            instruction="I was wondering if you could analyse",
+            output_format='{"x": 1}',
+            free_flags={"remove_filler_phrases": 1},
+        )
+    result = asyncio.run(go())
+    assert '{"x": 1}' in result
+
+
+def test_acompress_concurrency():
+    async def go():
+        return await asyncio.gather(
+            acompress("I was wondering if you could do A", remove_filler_phrases=1),
+            acompress("I was wondering if you could do B", remove_filler_phrases=1),
+        )
+    results = asyncio.run(go())
+    assert len(results) == 2
+    assert all("wondering" not in r.lower() for r in results)
+
+
+def test_valid_levels_constant():
+    assert VALID_LEVELS == ("free", "careful", "protected")

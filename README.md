@@ -1,12 +1,20 @@
-# less-tokens
+<p align="center">
+  <img src="https://raw.githubusercontent.com/shaminchokshi/less-tokens/main/logo.jpeg" alt="less-tokens logo" width="320">
+</p>
 
-[![PyPI version](https://img.shields.io/pypi/v/less-tokens.svg)](https://pypi.org/project/less-tokens/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+<h1 align="center">less-tokens</h1>
 
-Shrink your LLM prompts by 30 to 40 percent without changing what the model says back.
+<p align="center">
+  <a href="https://pypi.org/project/less-tokens/"><img src="https://img.shields.io/pypi/v/less-tokens.svg" alt="PyPI version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
+</p>
 
-`less-tokens` is a small Python library that compresses prompts before you send them to an LLM. It works by stripping out filler words, redundant phrases, and grammatical scaffolding that the model doesn't actually need. The result is a shorter prompt that costs less and responds faster, while producing essentially the same answer.
+<p align="center">
+  <b>Shrink your LLM prompts by 30 to 40 percent without changing what the model says back.</b>
+</p>
+
+`less-tokens` is a small Python library that compresses prompts before you send them to an LLM. It strips out filler words, redundant phrases, and grammatical scaffolding that the model doesn't actually need. The result is a shorter prompt that costs less and responds faster, while producing essentially the same answer.
 
 No neural model, no GPU, no API key for the compression itself. It's classical lexical NLP, runs in milliseconds on a laptop CPU, and is fully deterministic.
 
@@ -22,6 +30,19 @@ compressed = compress(original,
 print(compressed)
 # "explain run Python script command line"
 ```
+
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Install](#install)
+- [The functions at a glance](#the-functions-at-a-glance)
+- [compress: shrink a prompt](#compress-shrink-a-prompt)
+- [compress_structured: protect the parts that matter](#compress_structured-protect-the-parts-that-matter)
+- [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
+- [Async support](#async-support)
+- [A complete example](#a-complete-example)
+- [Under the hood](#under-the-hood)
+- [Limitations](#limitations)
 
 ## Why this exists
 
@@ -65,11 +86,20 @@ source .venv/bin/activate
 pip install less-tokens
 ```
 
-## How to use it
+## The functions at a glance
 
-The library exposes two functions. That's it.
+The library gives you four functions. Two for compressing, one for measuring, and async versions for scale.
 
-### `compress()` shrinks a prompt
+| Function | What it's for |
+|----------|---------------|
+| `compress()` | Compress a plain prompt using any combination of techniques |
+| `compress_structured()` | Compress a prompt that has parts you must protect, like a JSON output format or strict rules |
+| `compare()` | Measure how similar the LLM's two answers are, across six metrics |
+| `acompress()` / `acompress_structured()` | Async versions of the two compressors, for use inside an event loop |
+
+If your prompt is just instructions, use `compress()`. If your prompt mixes instructions with an output schema or rules that can't be touched, use `compress_structured()`. Start there.
+
+## compress: shrink a prompt
 
 Pass your prompt and any combination of eleven flags. Each flag is `1` to enable or `0` to disable. Bool and string aliases like `True` or `"on"` work too. Defaults are off for everything except whitespace cleanup, so you choose what runs.
 
@@ -84,7 +114,7 @@ short = compress(
 # "explain"
 ```
 
-#### The eleven techniques
+### The eleven techniques
 
 | Flag | What it does | Example |
 |------|--------------|---------|
@@ -100,7 +130,7 @@ short = compress(
 | `preserve_named_entities` | Protects names from pruning | "New York" stays intact (modifier flag) |
 | `normalize_whitespace_punct` | Cleans up spacing | "hello   world!!!" becomes "hello world!" (always on) |
 
-#### What never gets removed
+### What never gets removed
 
 Two categories of words are hard-coded as protected, even at the most aggressive setting.
 
@@ -110,7 +140,7 @@ Second, question words. `What`, `why`, `how`, `when`, `where`, `which`. These ca
 
 Also, if your original prompt ended with a question mark, the compressed version will too. We re-assert question form at the end of the pipeline so it isn't lost during pruning.
 
-#### Four presets you can copy
+### Four presets you can copy
 
 You don't have to figure out which flags to combine. Here are four named recipes for different aggression levels:
 
@@ -149,7 +179,102 @@ compress(prompt,
 # about 40% reduction, 0.88 BERTScore
 ```
 
-### `compare()` measures the quality tradeoff
+## compress_structured: protect the parts that matter
+
+Real prompts are rarely just instructions. They often carry parts that must survive exactly, like a JSON output schema, or rules that would break if a single word were dropped. Compressing those parts the same way you compress the instruction body is dangerous.
+
+`compress_structured()` solves this by letting you assign a compression *level* to each part of the prompt:
+
+| Level | What happens | Use it for |
+|-------|--------------|------------|
+| `free` | Full compression using your chosen flags | The instruction body |
+| `careful` | Only safe, meaning-preserving techniques (no stopword removal, no pruning, no synonyms) | Rules and constraints |
+| `protected` | Returned byte-for-byte, untouched | JSON schemas, output formats, examples |
+
+### The easy way: name your sections
+
+The most common case is an instruction, some rules, and an output format. Just pass them as named arguments. The compression flags you pass apply only to the instruction.
+
+```python
+from less_tokens import compress_structured
+
+prompt = compress_structured(
+    instruction="I was wondering if you could analyse this customer review and tell me how the person is feeling about the product.",
+    rules="Do not include any personal opinions. Never guess if you are unsure.",
+    output_format='{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}',
+    remove_stopwords=1,
+    remove_filler_phrases=1,
+)
+
+print(prompt)
+```
+
+Output:
+
+```
+analyse customer review tell person feeling product.
+
+don't include any personal opinions. Never guess if you're unsure.
+
+Output format:
+{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}
+```
+
+Look at what happened to each part:
+
+- The **instruction** got compressed hard. "I was wondering if you could" is gone, stopwords are gone.
+- The **rules** were compressed gently. "Do not" became "don't" and "you are" became "you're", but the critical words "not" and "Never" survived intact. The meaning is identical.
+- The **output format** is byte-for-byte unchanged. Your JSON schema is safe.
+
+### The flexible way: explicit zones
+
+If you need full control over ordering, or you want to mix levels in a custom way, pass an explicit list of zones. Each zone is a dict with `text` and `level`, or a simple `(text, level)` tuple.
+
+```python
+from less_tokens import compress_structured
+
+prompt = compress_structured(zones=[
+    {"text": "I was wondering if you could summarize the following article.", "level": "free"},
+    {"text": "Do not exceed 100 words. Never add facts not in the source.",   "level": "careful"},
+    {"text": '{"summary": "...", "word_count": N}',                           "level": "protected"},
+])
+```
+
+### Why "careful" mode exists
+
+This is the most important design decision in the library. Rules carry meaning in their small words. If you ran full stopword removal on "Do not exceed 100 words" you might get "exceed 100 words", which is the exact opposite instruction. So careful mode disables every technique that could flip or blur meaning:
+
+| Technique | free | careful | Why careful skips it |
+|-----------|:----:|:-------:|----------------------|
+| Filler phrase removal | yes | yes | Safe, only removes hedging |
+| Contractions | yes | yes | Safe, "do not" to "don't" keeps meaning |
+| Filler word removal | yes | yes | Safe, "basically" carries no logic |
+| Stopword removal | yes | no | Can drop words that matter in a constraint |
+| Function word pruning | yes | no | Can drop "not", "all", "only" type logic |
+| POS-keep | yes | no | Too aggressive for precise rules |
+| Lemmatize | yes | no | Can blur tense or number that matters |
+| Synonym shortening | yes | no | Can pick a narrower or wrong synonym |
+
+If even careful mode feels too risky for a specific rule, mark it `protected` and it won't be touched at all.
+
+### Seeing what changed
+
+Pass `return_detail=True` to get a breakdown of every zone, useful for debugging:
+
+```python
+result = compress_structured(
+    instruction="Please analyse this in detail.",
+    output_format='{"x": 1}',
+    remove_stopwords=1,
+    return_detail=True,
+)
+
+print(result["compressed"])     # the assembled prompt
+for zone in result["zones"]:
+    print(zone["level"], zone["original_len"], "->", zone["compressed_len"])
+```
+
+## compare: measure the quality tradeoff
 
 Compression is only useful if the LLM still produces the same answer. `compare()` quantifies that across six different similarity metrics so you can see exactly what compressing cost you.
 
@@ -178,7 +303,7 @@ out_compressed = call_llm(compressed)
 metrics = compare(original, compressed, out_original, out_compressed)
 ```
 
-#### What you get back
+### What you get back
 
 ```python
 {
@@ -206,7 +331,7 @@ metrics = compare(original, compressed, out_original, out_compressed)
 }
 ```
 
-#### What each of the six metrics actually means
+### What each of the six metrics actually means
 
 All six measure the same thing from different angles: how similar is the LLM's response to the compressed prompt, compared to its response to the original. Each one captures a different notion of "similar".
 
@@ -282,7 +407,7 @@ Interpretation:
 
 BERTScore also gives you `bertscore_p` for precision and `bertscore_r` for recall. F1 is the harmonic mean of both, and is the one you should focus on.
 
-#### Which metric should you care about?
+### Which metric should you care about?
 
 It depends what you're trying to measure:
 
@@ -302,12 +427,46 @@ metrics = compare(original, compressed, out_original, out_compressed,
 
 You still get the other five metrics, which together are very informative.
 
-## A complete example
+## Async support
 
-Here's the whole flow end to end:
+Compression is CPU-bound and pure Python, so the async functions run it in a thread executor and never block your event loop. They take exactly the same arguments as their synchronous counterparts.
 
 ```python
-from less_tokens import compress, compare
+import asyncio
+from less_tokens import acompress, acompress_structured
+
+async def main():
+    # Async version of compress()
+    short = await acompress(
+        "I was wondering if you could help me with this",
+        remove_filler_phrases=1, remove_stopwords=1,
+    )
+
+    # Async version of compress_structured()
+    prompt = await acompress_structured(
+        instruction="Please analyse this text in detail.",
+        output_format='{"result": "..."}',
+        remove_stopwords=1,
+    )
+
+    # Compress many prompts at once
+    results = await asyncio.gather(
+        acompress(p1, remove_stopwords=1),
+        acompress(p2, remove_stopwords=1),
+        acompress(p3, remove_stopwords=1),
+    )
+
+asyncio.run(main())
+```
+
+This is handy when you're compressing inside an async web server (FastAPI, aiohttp) or processing a large batch of prompts concurrently.
+
+## A complete example
+
+Here's the whole flow end to end, using structured compression to protect an output format:
+
+```python
+from less_tokens import compress_structured, compare
 from openai import OpenAI
 
 client = OpenAI()
@@ -320,21 +479,25 @@ def ask_gpt(prompt: str) -> str:
     )
     return r.choices[0].message.content
 
-original = ("I was wondering if you could please give me a step-by-step "
-            "explanation of how to make a really good cup of pour-over "
-            "coffee at home using a Hario V60.")
+# Build the original prompt the long way
+original = (
+    "I was wondering if you could please analyse the following customer "
+    "review and tell me the overall sentiment.\n\n"
+    "Do not include any personal opinions. Never guess if you are unsure.\n\n"
+    'Output format:\n{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}'
+)
 
-compressed = compress(
-    original,
+# Compress it, protecting the rules and output format
+compressed = compress_structured(
+    instruction="I was wondering if you could please analyse the following customer review and tell me the overall sentiment.",
+    rules="Do not include any personal opinions. Never guess if you are unsure.",
+    output_format='{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}',
     remove_filler_phrases=1,
-    apply_abbreviations=1,
-    apply_contractions=1,
-    remove_filler_words=1,
     remove_stopwords=1,
 )
 
-print(f"Original   ({len(original)} chars): {original}")
-print(f"Compressed ({len(compressed)} chars): {compressed}")
+print(f"Original   ({len(original)} chars)")
+print(f"Compressed ({len(compressed)} chars)")
 print()
 
 out_original   = ask_gpt(original)
@@ -344,23 +507,11 @@ metrics = compare(original, compressed, out_original, out_compressed)
 
 print(f"Token reduction: {metrics['compression']['token_reduction_pct']}%")
 print(f"BERTScore F1:    {metrics['output_similarity']['bertscore_f']}")
-print(f"Cosine sim:      {metrics['output_similarity']['cosine']}")
 ```
 
-Typical output looks like:
+You shrink the wordy instruction, keep the rules safe, keep the JSON schema exact, and confirm with `compare()` that the model still returns the same structured answer.
 
-```
-Original   (160 chars): I was wondering if you could please give me a step-by-step...
-Compressed (95 chars):  step-by-step explanation pour-over coffee home Hario V60.
-
-Token reduction: 40.6%
-BERTScore F1:    0.918
-Cosine sim:      0.911
-```
-
-You saved 40 percent of your tokens and the LLM still gave you essentially the same answer.
-
-## What's happening under the hood
+## Under the hood
 
 `less-tokens` is built on classical lexical NLP. These are the same techniques used in information retrieval and pre-neural NLP pipelines, just packaged together with sensible defaults and safety guarantees:
 
@@ -374,7 +525,7 @@ You saved 40 percent of your tokens and the LLM still gave you essentially the s
 
 Every technique is a pure function. Same input plus same flags always produces the same output, byte for byte. Compression itself runs in well under 100 ms on a single CPU core.
 
-## Limitations worth knowing about
+## Limitations
 
 A few honest caveats so you know what you're getting.
 
@@ -403,7 +554,7 @@ pytest tests/ -v
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/shaminchokshi/less-tokens/blob/main/LICENSE).
 
 ## Citations
 

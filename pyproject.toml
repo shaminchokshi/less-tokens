@@ -4,17 +4,66 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "less-tokens"
-version         = "0.1.0"
-description     = "Deterministic, training-free lexical compression for LLM prompts."
+version         = "0.2.0"
+description     = "Cut LLM prompt token costs by 30-40% with deterministic, training-free lexical compression. Shrink prompts for OpenAI, Anthropic, and any LLM API while preserving output quality. Includes zone-aware compression that protects JSON schemas and output formats, async support, and a built-in 6-metric quality evaluator."
 readme          = "README.md"
 license         = { text = "MIT" }
 requires-python = ">=3.9"
-authors         = [{ name = "Shamin Chokshi", email = "shaminchokshi2000@gail.com" }]
-keywords        = ["llm", "prompt", "compression", "tokens", "nlp", "openai", "tokenization", "shortening", "Less", "reduce", ]
+authors         = [{ name = "Shamin Chokshi", email = "shaminchokshi2000@gmail.com" }]
+keywords        = [
+    "llm",
+    "large-language-models",
+    "prompt",
+    "prompt-compression",
+    "prompt-engineering",
+    "prompt-optimization",
+    "compression",
+    "token-compression",
+    "token-reduction",
+    "token-optimization",
+    "tokens",
+    "tokenization",
+    "reduce-tokens",
+    "save-tokens",
+    "cost-reduction",
+    "cost-optimization",
+    "llm-cost",
+    "api-cost",
+    "openai",
+    "gpt",
+    "gpt-4",
+    "gpt-4o",
+    "anthropic",
+    "claude",
+    "gemini",
+    "chatgpt",
+    "nlp",
+    "natural-language-processing",
+    "text-compression",
+    "text-processing",
+    "stopwords",
+    "lemmatization",
+    "nltk",
+    "wordnet",
+    "tiktoken",
+    "inference",
+    "inference-optimization",
+    "latency",
+    "efficiency",
+    "shortening",
+    "summarization",
+    "preprocessing",
+    "rag",
+    "context-compression",
+    "bertscore",
+    "deterministic",
+    "lightweight",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -22,8 +71,12 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Text Processing :: Linguistic",
+    "Topic :: Text Processing :: General",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
 dependencies = [
     "nltk>=3.8",
@@ -38,11 +91,8 @@ dependencies = [
 dev = ["pytest>=7", "build", "twine"]
 
 [project.urls]
-Homepage   = "https://github.com/shaminchokshi/less-tokens"
-Issues     = "https://github.com/shaminchokshi/less-tokens/issues"
-Repository = "https://github.com/shaminchokshi/less-tokens"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["less_tokens*"]
-exclude = ["tests*"]
+Homepage      = "https://github.com/shaminchokshi/less-tokens"
+Documentation = "https://github.com/shaminchokshi/less-tokens#readme"
+Issues        = "https://github.com/shaminchokshi/less-tokens/issues"
+Repository    = "https://github.com/shaminchokshi/less-tokens"
+Changelog     = "https://github.com/shaminchokshi/less-tokens/releases"
