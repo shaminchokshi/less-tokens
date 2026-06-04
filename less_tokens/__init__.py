@@ -7,6 +7,13 @@ Core functions
 - compare(original_prompt, compressed_prompt, original_output, compressed_output)
     -> dict of six similarity metrics + compression stats
 
+Document reduction
+------------------
+For turning an uploaded PDF / Word / text file into compact, model-friendly
+Markdown (content only — no layout, fonts, or metadata):
+
+- reduce_document(path) -> markdown string
+
 Structured (zone-aware) compression
 ------------------------------------
 For prompts that mix free-text instructions with parts that must NOT be
@@ -27,6 +34,10 @@ Quick start
 >>> compress(p, remove_filler_phrases=1, remove_stopwords=1, apply_contractions=1)
 'explain run python script'
 
+>>> from less_tokens import reduce_document
+>>> reduce_document("contract.pdf")[:40]
+'# Master Services Agreement\\n## Term ...'
+
 >>> from less_tokens import compress_structured
 >>> compress_structured(
 ...     instruction="I was wondering if you could analyse this review.",
@@ -38,6 +49,7 @@ Quick start
 
 from .compressor import compress, TECHNIQUES
 from .metrics import compare
+from .document import reduce_document, areduce_document
 from .structured import (
     compress_structured,
     acompress,
@@ -47,10 +59,12 @@ from .structured import (
     VALID_LEVELS,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 __all__ = [
     "compress",
     "compare",
+    "reduce_document",
+    "areduce_document",
     "compress_structured",
     "acompress",
     "acompress_structured",

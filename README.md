@@ -37,6 +37,7 @@ print(compressed)
 - [Install](#install)
 - [The functions at a glance](#the-functions-at-a-glance)
 - [compress: shrink a prompt](#compress-shrink-a-prompt)
+- [reduce_document: turn a file into clean markdown](#reduce_document-turn-a-file-into-clean-markdown)
 - [compress_structured: protect the parts that matter](#compress_structured-protect-the-parts-that-matter)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
 - [Async support](#async-support)
@@ -64,11 +65,15 @@ Strip these out and the model still gets your point, but you pay less. On a larg
 
 The balanced setting is the sweet spot for most production use. Aggressive gets you a bit more compression without much extra quality loss.
 
+There's a second, separate source of waste: **files**. When you hand an LLM a raw PDF or Word document, you're shipping embedded fonts, positioning data, and office XML on top of the words you actually care about. If you only need the *content* of the file, converting it to Markdown first cuts the token count enormously. That's what `reduce_document()` is for.
+
 ## Install
 
 ```bash
 pip install less-tokens
 ```
+
+That single command pulls in everything: the compressor, the `compare()` metrics stack, and the PDF/Word parsers used by `reduce_document()`. There are no optional extras to remember.
 
 On first use it downloads about 30 MB of NLTK data automatically. If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
 
@@ -88,16 +93,17 @@ pip install less-tokens
 
 ## The functions at a glance
 
-The library gives you four functions. Two for compressing, one for measuring, and async versions for scale.
+The library gives you five functions. Two for compressing, one for turning a document into clean text, one for measuring, and async versions for scale.
 
 | Function | What it's for |
 |----------|---------------|
 | `compress()` | Compress a plain prompt using any combination of techniques |
 | `compress_structured()` | Compress a prompt that has parts you must protect, like a JSON output format or strict rules |
+| `reduce_document()` | Turn an uploaded PDF, Word, or text file into clean Markdown, keeping the content and dropping the layout/metadata |
 | `compare()` | Measure how similar the LLM's two answers are, across six metrics |
-| `acompress()` / `acompress_structured()` | Async versions of the two compressors, for use inside an event loop |
+| `acompress()` / `acompress_structured()` / `areduce_document()` | Async versions of the two compressors and the document reducer, for use inside an event loop |
 
-If your prompt is just instructions, use `compress()`. If your prompt mixes instructions with an output schema or rules that can't be touched, use `compress_structured()`. Start there.
+If your prompt is just instructions, use `compress()`. If your prompt mixes instructions with an output schema or rules that can't be touched, use `compress_structured()`. If you're starting from a file rather than a string, run it through `reduce_document()` first. Start there.
 
 ## compress: shrink a prompt
 
@@ -177,6 +183,94 @@ compress(prompt,
          remove_filler_words=1, remove_stopwords=1, remove_function_words=1,
          pos_keep_only=1, lemmatize=1, shorten_synonyms=1, preserve_named_entities=1)
 # about 40% reduction, 0.88 BERTScore
+```
+
+## reduce_document: turn a file into clean markdown
+
+Sometimes you don't start with a prompt string, you start with a file: a PDF a user uploaded, a Word document a colleague sent over. Handing that file to an LLM directly is expensive, because the file is mostly *not content*. A `.pdf` carries embedded fonts and per-glyph positioning; a `.docx` carries style definitions and office XML. None of that is what you want the model to read.
+
+`reduce_document()` extracts just the content (titles, headings, bullet points, numbered lists, tables) into clean Markdown, and throws away everything that only describes *layout* (margins, fonts, line spacing, page geometry, positioning, XML scaffolding). The output is a fraction of the tokens, and it's exactly the part the model needs.
+
+This is a preprocessing step, not a compressor. Use it when **the user needs the content of the file**, not its formatting or metadata.
+
+### Basic usage
+
+```python
+from less_tokens import reduce_document
+
+markdown = reduce_document("quarterly_report.pdf")
+print(markdown)
+```
+
+```
+# Quarterly Report
+
+## Summary
+
+Revenue grew 18% quarter over quarter, driven mainly by the new
+enterprise tier.
+
+## Key figures
+
+| Metric   | Q2    | Q3    |
+| ---      | ---   | ---   |
+| Revenue  | 4.1M  | 4.8M  |
+| Churn    | 2.3%  | 1.9%  |
+
+## Next steps
+
+- Expand the sales team
+- Launch in two new regions
+```
+
+You can then feed that Markdown straight into a prompt, or compress it further with `compress()`.
+
+### Parameters
+
+| Parameter | What it does |
+|-----------|--------------|
+| `path` | Path to the document. PDF, Word, or any plain-text format. |
+| `file_type` | Force a parser regardless of extension, e.g. `"pdf"` or `".docx"`. Handy for files with missing or wrong extensions. |
+| `include_tables` | `True` by default. Converts tables to Markdown tables. Set `False` to skip table detection entirely. |
+
+### What it keeps and what it drops
+
+| Kept (content) | Dropped (layout / metadata) |
+|----------------|-----------------------------|
+| Titles and headings (as `#`, `##`, ...) | Margins, indentation, page size |
+| Paragraph text | Fonts, font sizes, colors |
+| Bullet and numbered lists | Line and paragraph spacing |
+| Tables (as Markdown tables) | Absolute positioning, page geometry |
+| Bold and italic emphasis | Headers, footers, page numbers |
+| Reading order | Office XML and style definitions |
+
+### Supported file types
+
+| Type | Extensions |
+|------|------------|
+| PDF | `.pdf` |
+| Word | `.docx`, `.docm` |
+| Plain text / Markdown | `.txt`, `.md`, `.rst`, ... |
+
+All of these work out of the box with a plain `pip install less-tokens` — the PDF and Word parsers ship as part of the package.
+
+### Pairing it with compress
+
+The two steps stack: first strip the file down to its content, then compress that content lexically.
+
+```python
+from less_tokens import reduce_document, compress
+
+# Step 1: file -> clean markdown (drops layout + metadata)
+content = reduce_document("contract.docx")
+
+# Step 2: markdown -> compressed text (drops filler + stopwords)
+lean = compress(content,
+                remove_filler_phrases=1,
+                remove_stopwords=1,
+                apply_contractions=1)
+
+# `lean` is now a tiny fraction of the original file's token count.
 ```
 
 ## compress_structured: protect the parts that matter
@@ -429,11 +523,17 @@ You still get the other five metrics, which together are very informative.
 
 ## Async support
 
-Compression is CPU-bound and pure Python, so the async functions run it in a thread executor and never block your event loop. They take exactly the same arguments as their synchronous counterparts.
+Compression and document reduction are CPU-bound and pure Python, so the async functions run them in a thread executor and never block your event loop. They take exactly the same arguments as their synchronous counterparts.
+
+| Sync | Async |
+|------|-------|
+| `compress()` | `acompress()` |
+| `compress_structured()` | `acompress_structured()` |
+| `reduce_document()` | `areduce_document()` |
 
 ```python
 import asyncio
-from less_tokens import acompress, acompress_structured
+from less_tokens import acompress, acompress_structured, areduce_document
 
 async def main():
     # Async version of compress()
@@ -449,6 +549,9 @@ async def main():
         remove_stopwords=1,
     )
 
+    # Async version of reduce_document()
+    content = await areduce_document("report.pdf")
+
     # Compress many prompts at once
     results = await asyncio.gather(
         acompress(p1, remove_stopwords=1),
@@ -456,17 +559,24 @@ async def main():
         acompress(p3, remove_stopwords=1),
     )
 
+    # Or reduce many uploaded files at once
+    docs = await asyncio.gather(
+        areduce_document("a.pdf"),
+        areduce_document("b.docx"),
+        areduce_document("c.txt"),
+    )
+
 asyncio.run(main())
 ```
 
-This is handy when you're compressing inside an async web server (FastAPI, aiohttp) or processing a large batch of prompts concurrently.
+This is handy when you're compressing inside an async web server (FastAPI, aiohttp), or reducing a batch of uploaded files concurrently.
 
 ## A complete example
 
-Here's the whole flow end to end, using structured compression to protect an output format:
+Here's the whole flow end to end, starting from an uploaded file, using `reduce_document()` to get clean text and structured compression to protect an output format:
 
 ```python
-from less_tokens import compress_structured, compare
+from less_tokens import reduce_document, compress_structured, compare
 from openai import OpenAI
 
 client = OpenAI()
@@ -479,19 +589,24 @@ def ask_gpt(prompt: str) -> str:
     )
     return r.choices[0].message.content
 
+# Step 0: a user uploaded a review as a PDF. Pull out just the content.
+review = reduce_document("customer_review.pdf")
+
 # Build the original prompt the long way
 original = (
     "I was wondering if you could please analyse the following customer "
-    "review and tell me the overall sentiment.\n\n"
+    f"review and tell me the overall sentiment.\n\n{review}\n\n"
     "Do not include any personal opinions. Never guess if you are unsure.\n\n"
     'Output format:\n{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}'
 )
 
 # Compress it, protecting the rules and output format
-compressed = compress_structured(
-    instruction="I was wondering if you could please analyse the following customer review and tell me the overall sentiment.",
-    rules="Do not include any personal opinions. Never guess if you are unsure.",
-    output_format='{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}',
+compressed = compress_structured(zones=[
+    ("I was wondering if you could please analyse the following customer "
+     f"review and tell me the overall sentiment.\n\n{review}", "free"),
+    ("Do not include any personal opinions. Never guess if you are unsure.", "careful"),
+    ('{"sentiment": "positive|negative|neutral", "confidence": 0.0-1.0}', "protected"),
+],
     remove_filler_phrases=1,
     remove_stopwords=1,
 )
@@ -509,7 +624,7 @@ print(f"Token reduction: {metrics['compression']['token_reduction_pct']}%")
 print(f"BERTScore F1:    {metrics['output_similarity']['bertscore_f']}")
 ```
 
-You shrink the wordy instruction, keep the rules safe, keep the JSON schema exact, and confirm with `compare()` that the model still returns the same structured answer.
+You pull the content out of the file, shrink the wordy instruction, keep the rules safe, keep the JSON schema exact, and confirm with `compare()` that the model still returns the same structured answer.
 
 ## Under the hood
 
@@ -522,8 +637,10 @@ You shrink the wordy instruction, keep the rules safe, keep the JSON schema exac
 - **bert_score** computes BERTScore F1
 - **rouge_score** computes ROUGE-1, ROUGE-2, and ROUGE-L
 - **NLTK's BLEU** with method-1 smoothing
+- **PyMuPDF** gives us the raw text spans (with font size and bold/italic flags) and table regions of a PDF; `reduce_document()` reconstructs the Markdown from those primitives itself — headings from relative font size, emphasis from span flags, lists from leading glyphs, and reading order from on-page position
+- **python-docx** reads Word documents in true reading order, which `reduce_document()` maps to Markdown headings, lists, and tables
 
-Every technique is a pure function. Same input plus same flags always produces the same output, byte for byte. Compression itself runs in well under 100 ms on a single CPU core.
+Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte. Compression itself runs in well under 100 ms on a single CPU core. Document reduction is deterministic too: the same file always produces the same Markdown.
 
 ## Limitations
 
@@ -538,6 +655,8 @@ The `shorten_synonyms` flag is the riskiest. WordNet sometimes picks topically n
 Quality is task-dependent. Open-ended Q&A and creative writing tolerate compression well. Commonsense reasoning (HellaSwag-style multiple choice) degrades faster.
 
 `compare()` measures similarity, not correctness. If your original prompt produces a bad LLM output, a similar compressed output is still bad. Make sure your prompts work first, then compress.
+
+`reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty. Run OCR first if that's your input. It also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
 
 ## Contributing
 

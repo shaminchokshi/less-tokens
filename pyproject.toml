@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "less-tokens"
-version         = "0.2.0"
-description     = "Cut LLM prompt token costs by 30-40% with deterministic, training-free lexical compression. Shrink prompts for OpenAI, Anthropic, and any LLM API while preserving output quality. Includes zone-aware compression that protects JSON schemas and output formats, async support, and a built-in 6-metric quality evaluator."
+version         = "0.4.0"
+description     = "Cut LLM prompt token costs by 30-40% with deterministic, training-free lexical compression. Shrink prompts for OpenAI, Anthropic, and any LLM API while preserving output quality. Includes document-to-markdown reduction for PDFs and Word files, zone-aware compression that protects JSON schemas and output formats, async support, and a built-in 6-metric quality evaluator."
 readme          = "README.md"
 license         = { text = "MIT" }
 requires-python = ">=3.9"
@@ -58,6 +58,12 @@ keywords        = [
     "bertscore",
     "deterministic",
     "lightweight",
+    "pdf",
+    "docx",
+    "word",
+    "pdf-to-markdown",
+    "document-parsing",
+    "markdown",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -85,6 +91,8 @@ dependencies = [
     "sentence-transformers>=2.5.0",
     "bert-score>=0.3.13",
     "numpy>=1.21",
+    "pymupdf>=1.24.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]
