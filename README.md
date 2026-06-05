@@ -14,9 +14,9 @@
   <b>Shrink your LLM prompts by 30 to 40 percent without changing what the model says back.</b>
 </p>
 
-`less-tokens` is a small Python library that compresses prompts before you send them to an LLM. It strips out filler words, redundant phrases, and grammatical scaffolding that the model doesn't actually need. The result is a shorter prompt that costs less and responds faster, while producing essentially the same answer.
+`less-tokens` is a small Python library for developers who are paying for tokens and want to stop paying for the ones that don't earn their place. It compresses prompts before you send them to an LLM, stripping out filler words, redundant phrases, and grammatical scaffolding the model doesn't actually need. The result is a shorter prompt that costs less and responds faster, while producing essentially the same answer.
 
-No neural model, no GPU, no API key for the compression itself. It's classical lexical NLP, runs in milliseconds on a laptop CPU, and is fully deterministic.
+No neural model, no GPU, no API key for the compression itself. It's classical lexical NLP, runs in milliseconds on a laptop CPU, and is fully deterministic — same input, same flags, same output, every time. That matters when you're putting something in a production pipeline.
 
 ```python
 from less_tokens import compress
@@ -47,9 +47,9 @@ print(compressed)
 
 ## Why this exists
 
-If you're calling OpenAI, Anthropic, or any other LLM API at meaningful volume, every token has a cost. And typical prompts carry a lot of fat:
+If you're calling OpenAI, Anthropic, or any other LLM API at meaningful volume, every token is a line item on your bill. And the prompts your code sends carry a lot of fat that the model quietly ignores:
 
-- *"I was wondering if you could..."* is hedging the model ignores
+- *"I was wondering if you could..."* is hedging that adds nothing
 - *"the"*, *"a"*, *"is"* are function words that rarely change meaning
 - *"basically"*, *"actually"*, *"really"* are fillers
 - *"for example"* is just a verbose way to write *"e.g."*
@@ -63,9 +63,9 @@ Strip these out and the model still gets your point, but you pay less. On a larg
 | Aggressive | about 35% | 0.91 |
 | Maximum | about 40% | 0.88 |
 
-The balanced setting is the sweet spot for most production use. Aggressive gets you a bit more compression without much extra quality loss.
+For most production use, the balanced setting is the sweet spot. Aggressive gets you a bit more compression without much extra quality loss.
 
-There's a second, separate source of waste: **files**. When you hand an LLM a raw PDF or Word document, you're shipping embedded fonts, positioning data, and office XML on top of the words you actually care about. If you only need the *content* of the file, converting it to Markdown first cuts the token count enormously. That's what `reduce_document()` is for.
+There's a second source of waste that bites you the moment your use case involves **files**. When your pipeline hands an LLM a raw PDF or Word document, you're shipping embedded fonts, positioning data, and office XML on top of the words you actually care about. If your use case only needs the *content* of the file, converting it to Markdown first cuts the token count enormously — that's what `reduce_document()` is for.
 
 ## Install
 
@@ -73,7 +73,7 @@ There's a second, separate source of waste: **files**. When you hand an LLM a ra
 pip install less-tokens
 ```
 
-That single command pulls in everything: the compressor, the `compare()` metrics stack, and the PDF/Word parsers used by `reduce_document()`. There are no optional extras to remember.
+That single command pulls in everything: the compressor, the `compare()` metrics stack, and the PDF/Word parsers used by `reduce_document()`. There are no optional extras to remember and nothing else to wire up.
 
 On first use it downloads about 30 MB of NLTK data automatically. If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
 
@@ -93,21 +93,21 @@ pip install less-tokens
 
 ## The functions at a glance
 
-The library gives you five functions. Two for compressing, one for turning a document into clean text, one for measuring, and async versions for scale.
+The library gives you five functions. Pick the one that matches what your use case actually needs:
 
-| Function | What it's for |
-|----------|---------------|
-| `compress()` | Compress a plain prompt using any combination of techniques |
-| `compress_structured()` | Compress a prompt that has parts you must protect, like a JSON output format or strict rules |
-| `reduce_document()` | Turn an uploaded PDF, Word, or text file into clean Markdown, keeping the content and dropping the layout/metadata |
-| `compare()` | Measure how similar the LLM's two answers are, across six metrics |
-| `acompress()` / `acompress_structured()` / `areduce_document()` | Async versions of the two compressors and the document reducer, for use inside an event loop |
+| Function | Reach for it when… |
+|----------|--------------------|
+| `compress()` | You have a prompt string and want it shorter |
+| `compress_structured()` | Your prompt mixes free instructions with parts you can't touch, like a JSON output schema or strict rules |
+| `reduce_document()` | Your input is a PDF or Word file and you only need its content as text, not a full file upload |
+| `compare()` | You want to prove the compression didn't change the model's answer |
+| `acompress()` / `acompress_structured()` / `areduce_document()` | You're doing any of the above inside an async event loop |
 
-If your prompt is just instructions, use `compress()`. If your prompt mixes instructions with an output schema or rules that can't be touched, use `compress_structured()`. If you're starting from a file rather than a string, run it through `reduce_document()` first. Start there.
+The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. When you want to know what it cost you in quality, run `compare()`.
 
 ## compress: shrink a prompt
 
-Pass your prompt and any combination of eleven flags. Each flag is `1` to enable or `0` to disable. Bool and string aliases like `True` or `"on"` work too. Defaults are off for everything except whitespace cleanup, so you choose what runs.
+This is the workhorse. Pass your prompt and any combination of eleven flags. Each flag is `1` to enable or `0` to disable. Bool and string aliases like `True` or `"on"` work too. Defaults are off for everything except whitespace cleanup, so you opt in to exactly the behavior your use case can tolerate.
 
 ```python
 from less_tokens import compress
@@ -138,9 +138,9 @@ short = compress(
 
 ### What never gets removed
 
-Two categories of words are hard-coded as protected, even at the most aggressive setting.
+Two categories of words are hard-coded as protected, even at the most aggressive setting, because dropping them would silently corrupt the instruction your code is sending.
 
-First, negations. Words like `not`, `no`, `never`, `nothing`, `nor`, `nobody`, and `cannot`. Dropping these flips the meaning of a sentence, which would be catastrophic. "Do not run this code" becoming "Do run this code" is not a tradeoff anyone wants.
+First, negations. Words like `not`, `no`, `never`, `nothing`, `nor`, `nobody`, and `cannot`. Dropping these flips the meaning of a sentence, which would be catastrophic in a production prompt. "Do not run this code" becoming "Do run this code" is not a tradeoff anyone wants.
 
 Second, question words. `What`, `why`, `how`, `when`, `where`, `which`. These carry the intent of a query.
 
@@ -148,11 +148,11 @@ Also, if your original prompt ended with a question mark, the compressed version
 
 ### Four presets you can copy
 
-You don't have to figure out which flags to combine. Here are four named recipes for different aggression levels:
+You don't have to figure out which flags to combine. Here are four named recipes mapped to how much risk your use case can absorb:
 
 ```python
 # SAFE: barely shrinks anything, near-perfect quality preservation.
-# Useful when you can't afford any quality risk.
+# Use it when you can't afford any quality risk at all.
 compress(prompt,
          remove_filler_phrases=1,
          apply_contractions=1,
@@ -170,14 +170,14 @@ compress(prompt,
 # about 30% reduction, 0.91 BERTScore
 
 # AGGRESSIVE: pure POS-based pruning. Slightly more reduction than balanced
-# at very similar quality. Great for high-volume systems.
+# at very similar quality. Great for high-volume systems where cost dominates.
 compress(prompt,
          pos_keep_only=1,
          preserve_named_entities=1)
 # about 35% reduction, 0.91 BERTScore
 
 # MAXIMUM: everything on. About 40% reduction at the cost of some output
-# quality. Use when the cost savings really matter.
+# quality. Use when the savings genuinely outweigh the quality hit.
 compress(prompt,
          remove_filler_phrases=1, apply_abbreviations=1, apply_contractions=1,
          remove_filler_words=1, remove_stopwords=1, remove_function_words=1,
@@ -187,11 +187,11 @@ compress(prompt,
 
 ## reduce_document: turn a file into clean markdown
 
-Sometimes you don't start with a prompt string, you start with a file: a PDF a user uploaded, a Word document a colleague sent over. Handing that file to an LLM directly is expensive, because the file is mostly *not content*. A `.pdf` carries embedded fonts and per-glyph positioning; a `.docx` carries style definitions and office XML. None of that is what you want the model to read.
+If your AI use case only requires the *content* of a PDF or a Word file — and not an entire multimodal text-plus-file upload — don't hand the raw file to the model. A raw `.pdf` or `.docx` is mostly *not content*: it's embedded fonts, per-glyph positioning, style definitions, office XML, page geometry. The model doesn't need any of that, but every byte of it costs you tokens.
 
-`reduce_document()` extracts just the content (titles, headings, bullet points, numbered lists, tables) into clean Markdown, and throws away everything that only describes *layout* (margins, fonts, line spacing, page geometry, positioning, XML scaffolding). The output is a fraction of the tokens, and it's exactly the part the model needs.
+Scrape the content instead. `reduce_document()` strips all that unnecessary info — the layout details, the metadata, the fonts and spacing — and keeps only the parts that actually carry meaning: titles, headings, bullet and numbered lists, tables. The result is far fewer tokens, and what you get back is clean Markdown the model reads happily.
 
-This is a preprocessing step, not a compressor. Use it when **the user needs the content of the file**, not its formatting or metadata.
+And guess what: if your use case permits you to go even leaner, you can run that Markdown straight through `compress()` and shrink it again. File → clean Markdown → compressed text, each step cheaper than the last.
 
 ### Basic usage
 
@@ -223,20 +223,20 @@ enterprise tier.
 - Launch in two new regions
 ```
 
-You can then feed that Markdown straight into a prompt, or compress it further with `compress()`.
+Drop that Markdown straight into a prompt, store it, or compress it further. It's just text now.
 
 ### Parameters
 
 | Parameter | What it does |
 |-----------|--------------|
 | `path` | Path to the document. PDF, Word, or any plain-text format. |
-| `file_type` | Force a parser regardless of extension, e.g. `"pdf"` or `".docx"`. Handy for files with missing or wrong extensions. |
+| `file_type` | Force a parser regardless of extension, e.g. `"pdf"` or `".docx"`. Handy when your pipeline receives files with missing or wrong extensions. |
 | `include_tables` | `True` by default. Converts tables to Markdown tables. Set `False` to skip table detection entirely. |
 
 ### What it keeps and what it drops
 
-| Kept (content) | Dropped (layout / metadata) |
-|----------------|-----------------------------|
+| Kept (the content your model needs) | Dropped (the overhead you were paying for) |
+|-------------------------------------|--------------------------------------------|
 | Titles and headings (as `#`, `##`, ...) | Margins, indentation, page size |
 | Paragraph text | Fonts, font sizes, colors |
 | Bullet and numbered lists | Line and paragraph spacing |
@@ -256,7 +256,7 @@ All of these work out of the box with a plain `pip install less-tokens` — the 
 
 ### Pairing it with compress
 
-The two steps stack: first strip the file down to its content, then compress that content lexically.
+This is the two-step move that gets your file-based use case to the smallest possible footprint: first strip the file down to its content, then compress that content lexically.
 
 ```python
 from less_tokens import reduce_document, compress
@@ -273,9 +273,11 @@ lean = compress(content,
 # `lean` is now a tiny fraction of the original file's token count.
 ```
 
+One caution worth building into your code: if the document has **tables** you need intact, aggressive `compress()` flags (stopword removal, POS-keep) will chew up the cell text and pipe structure. Either keep `reduce_document(..., include_tables=False)` if you don't need them, or protect the table with `compress_structured()` (next section).
+
 ## compress_structured: protect the parts that matter
 
-Real prompts are rarely just instructions. They often carry parts that must survive exactly, like a JSON output schema, or rules that would break if a single word were dropped. Compressing those parts the same way you compress the instruction body is dangerous.
+The real prompts your application builds are rarely just instructions. They carry parts that must survive exactly — a JSON output schema, an example the model copies, or rules that break if a single word is dropped. Compressing those parts the same way you compress the instruction body will quietly corrupt your output contract.
 
 `compress_structured()` solves this by letting you assign a compression *level* to each part of the prompt:
 
@@ -287,7 +289,7 @@ Real prompts are rarely just instructions. They often carry parts that must surv
 
 ### The easy way: name your sections
 
-The most common case is an instruction, some rules, and an output format. Just pass them as named arguments. The compression flags you pass apply only to the instruction.
+The most common case in real code is an instruction, some rules, and an output format. Just pass them as named arguments. The compression flags you pass apply only to the instruction.
 
 ```python
 from less_tokens import compress_structured
@@ -318,11 +320,11 @@ Look at what happened to each part:
 
 - The **instruction** got compressed hard. "I was wondering if you could" is gone, stopwords are gone.
 - The **rules** were compressed gently. "Do not" became "don't" and "you are" became "you're", but the critical words "not" and "Never" survived intact. The meaning is identical.
-- The **output format** is byte-for-byte unchanged. Your JSON schema is safe.
+- The **output format** is byte-for-byte unchanged. Your JSON schema is safe, so your parser downstream won't break.
 
 ### The flexible way: explicit zones
 
-If you need full control over ordering, or you want to mix levels in a custom way, pass an explicit list of zones. Each zone is a dict with `text` and `level`, or a simple `(text, level)` tuple.
+When you need full control over ordering, or you want to mix levels in a custom way, pass an explicit list of zones. Each zone is a dict with `text` and `level`, or a simple `(text, level)` tuple.
 
 ```python
 from less_tokens import compress_structured
@@ -336,7 +338,7 @@ prompt = compress_structured(zones=[
 
 ### Why "careful" mode exists
 
-This is the most important design decision in the library. Rules carry meaning in their small words. If you ran full stopword removal on "Do not exceed 100 words" you might get "exceed 100 words", which is the exact opposite instruction. So careful mode disables every technique that could flip or blur meaning:
+This is the most important design decision in the library, and the one that keeps it safe to drop into production. Rules carry meaning in their small words. If you ran full stopword removal on "Do not exceed 100 words" you might get "exceed 100 words", which is the exact opposite instruction. So careful mode disables every technique that could flip or blur meaning:
 
 | Technique | free | careful | Why careful skips it |
 |-----------|:----:|:-------:|----------------------|
@@ -353,7 +355,7 @@ If even careful mode feels too risky for a specific rule, mark it `protected` an
 
 ### Seeing what changed
 
-Pass `return_detail=True` to get a breakdown of every zone, useful for debugging:
+Pass `return_detail=True` to get a breakdown of every zone — useful when you're debugging why an output contract broke:
 
 ```python
 result = compress_structured(
@@ -370,9 +372,9 @@ for zone in result["zones"]:
 
 ## compare: measure the quality tradeoff
 
-Compression is only useful if the LLM still produces the same answer. `compare()` quantifies that across six different similarity metrics so you can see exactly what compressing cost you.
+Compression is only worth shipping if the LLM still produces the answer your use case depends on. `compare()` quantifies that across six different similarity metrics, so you can decide based on numbers instead of vibes.
 
-You make the LLM calls yourself, with whichever provider you like. `compare()` only looks at the four strings: original prompt, compressed prompt, output from original, output from compressed.
+You make the LLM calls yourself, with whichever provider your stack uses. `compare()` only looks at the four strings: original prompt, compressed prompt, output from original, output from compressed.
 
 ```python
 from less_tokens import compress, compare
@@ -427,7 +429,7 @@ metrics = compare(original, compressed, out_original, out_compressed)
 
 ### What each of the six metrics actually means
 
-All six measure the same thing from different angles: how similar is the LLM's response to the compressed prompt, compared to its response to the original. Each one captures a different notion of "similar".
+All six measure the same thing from different angles: how similar is the LLM's response to the compressed prompt, compared to its response to the original. Each one captures a different notion of "similar", and which one you care about depends on what your use case promises its users.
 
 **1. `cosine`. Semantic similarity. Range 0.0 to 1.0.**
 
@@ -503,7 +505,7 @@ BERTScore also gives you `bertscore_p` for precision and `bertscore_r` for recal
 
 ### Which metric should you care about?
 
-It depends what you're trying to measure:
+It depends on what your use case is actually promising:
 
 | Use case | Look at this | Threshold to aim for |
 |----------|--------------|----------------------|
@@ -512,7 +514,7 @@ It depends what you're trying to measure:
 | You need the same vocabulary, word order flexible | `rouge1_f` | 0.60 or higher |
 | Cheap sanity check without downloading BERT model | `cosine` | 0.85 or higher |
 
-If you don't want the 1 GB BERTScore model downloaded, skip it:
+If your environment can't afford the 1 GB BERTScore model download, skip it:
 
 ```python
 metrics = compare(original, compressed, out_original, out_compressed,
@@ -523,7 +525,7 @@ You still get the other five metrics, which together are very informative.
 
 ## Async support
 
-Compression and document reduction are CPU-bound and pure Python, so the async functions run them in a thread executor and never block your event loop. They take exactly the same arguments as their synchronous counterparts.
+If your use case runs inside an async web server or processes prompts in large concurrent batches, the async functions run the (CPU-bound, pure-Python) work in a thread executor so they never block your event loop. They take exactly the same arguments as their synchronous counterparts.
 
 | Sync | Async |
 |------|-------|
@@ -559,7 +561,7 @@ async def main():
         acompress(p3, remove_stopwords=1),
     )
 
-    # Or reduce many uploaded files at once
+    # Or reduce a batch of uploaded files at once
     docs = await asyncio.gather(
         areduce_document("a.pdf"),
         areduce_document("b.docx"),
@@ -569,11 +571,11 @@ async def main():
 asyncio.run(main())
 ```
 
-This is handy when you're compressing inside an async web server (FastAPI, aiohttp), or reducing a batch of uploaded files concurrently.
+This is what you want when you're compressing inside FastAPI or aiohttp, or reducing a batch of user-uploaded files concurrently.
 
 ## A complete example
 
-Here's the whole flow end to end, starting from an uploaded file, using `reduce_document()` to get clean text and structured compression to protect an output format:
+Here's the whole flow end to end for a file-based use case: a user uploads a review as a PDF, you pull out just the content, compress the wordy instruction, protect the output schema, and verify with `compare()` that the model still returns the same structured answer your code depends on.
 
 ```python
 from less_tokens import reduce_document, compress_structured, compare
@@ -624,11 +626,11 @@ print(f"Token reduction: {metrics['compression']['token_reduction_pct']}%")
 print(f"BERTScore F1:    {metrics['output_similarity']['bertscore_f']}")
 ```
 
-You pull the content out of the file, shrink the wordy instruction, keep the rules safe, keep the JSON schema exact, and confirm with `compare()` that the model still returns the same structured answer.
+You pulled the content out of the file, shrank the wordy instruction, kept the rules safe, kept the JSON schema exact, and confirmed with `compare()` that the model still returns the same structured answer. That's the full library working together on one realistic use case.
 
 ## Under the hood
 
-`less-tokens` is built on classical lexical NLP. These are the same techniques used in information retrieval and pre-neural NLP pipelines, just packaged together with sensible defaults and safety guarantees:
+`less-tokens` is built on classical lexical NLP — the same techniques used in information retrieval and pre-neural NLP pipelines, packaged together with sensible defaults and safety guarantees so you can drop them into real code:
 
 - **NLTK** (Loper and Bird, 2002) handles tokenisation, POS tagging, and named entity recognition
 - **WordNet** (Miller, 1995) provides the synonym graph
@@ -640,23 +642,23 @@ You pull the content out of the file, shrink the wordy instruction, keep the rul
 - **PyMuPDF** gives us the raw text spans (with font size and bold/italic flags) and table regions of a PDF; `reduce_document()` reconstructs the Markdown from those primitives itself — headings from relative font size, emphasis from span flags, lists from leading glyphs, and reading order from on-page position
 - **python-docx** reads Word documents in true reading order, which `reduce_document()` maps to Markdown headings, lists, and tables
 
-Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte. Compression itself runs in well under 100 ms on a single CPU core. Document reduction is deterministic too: the same file always produces the same Markdown.
+Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte — which is exactly what you want when the thing sits in a deterministic pipeline. Compression itself runs in well under 100 ms on a single CPU core, and document reduction is deterministic too: the same file always produces the same Markdown.
 
 ## Limitations
 
-A few honest caveats so you know what you're getting.
+A few honest caveats so you know whether this fits your use case before you build on it.
 
 English only. NLTK stopwords and WordNet are English-language. Multilingual support is open work.
 
 Best on short and medium prompts. Roughly 60 to 2000 characters. Very long retrieval-augmented contexts aren't the target use case. For those, look at learned compressors like [LLMLingua](https://github.com/microsoft/LLMLingua).
 
-The `shorten_synonyms` flag is the riskiest. WordNet sometimes picks topically narrower terms. Don't enable it without testing on your own data first.
+The `shorten_synonyms` flag is the riskiest. WordNet sometimes picks topically narrower terms. Don't enable it in production without testing on your own data first.
 
 Quality is task-dependent. Open-ended Q&A and creative writing tolerate compression well. Commonsense reasoning (HellaSwag-style multiple choice) degrades faster.
 
 `compare()` measures similarity, not correctness. If your original prompt produces a bad LLM output, a similar compressed output is still bad. Make sure your prompts work first, then compress.
 
-`reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty. Run OCR first if that's your input. It also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
+`reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty — run OCR first if that's your input. It also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
 
 ## Contributing
 
