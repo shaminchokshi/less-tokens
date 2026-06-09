@@ -22,10 +22,19 @@ compressed (output formats, JSON schemas) or must be compressed gently (rules):
 - compress_structured(instruction=..., rules=..., output_format=..., **flags)
     -> a partially-compressed prompt that protects the parts you care about
 
+Smart compression for conversation messages
+-------------------------------------------
+For compressing a single message from a multi-turn conversation history,
+automatically detecting and protecting code blocks, tables, URLs, math,
+and HTML while compressing only the natural language prose:
+
+- smart_compress(message, **flags) -> compressed message
+
 Async variants
 --------------
 - acompress(prompt, **flags)
 - acompress_structured(...)
+- asmart_compress(message, **flags)
 
 Quick start
 -----------
@@ -45,6 +54,12 @@ Quick start
 ...     output_format='{"sentiment": "positive|negative|neutral"}',
 ...     remove_stopwords=1, remove_filler_phrases=1,
 ... )
+
+>>> from less_tokens import smart_compress
+>>> smart_compress(
+...     "I was wondering if you could explain this.\\n\\n```python\\nprint('hi')\\n```",
+...     remove_filler_phrases=1, remove_stopwords=1,
+... )
 """
 
 from .compressor import compress, TECHNIQUES
@@ -58,6 +73,7 @@ from .structured import (
     FREE_DEFAULT_FLAGS,
     VALID_LEVELS,
 )
+from .smart_compress import smart_compress, asmart_compress
 
 __version__ = "0.4.0"
 __all__ = [
@@ -68,6 +84,8 @@ __all__ = [
     "compress_structured",
     "acompress",
     "acompress_structured",
+    "smart_compress",
+    "asmart_compress",
     "TECHNIQUES",
     "CAREFUL_FLAGS",
     "FREE_DEFAULT_FLAGS",

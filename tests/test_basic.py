@@ -206,3 +206,258 @@ def test_acompress_concurrency():
 
 def test_valid_levels_constant():
     assert VALID_LEVELS == ("free", "careful", "protected")
+
+
+# ---------------------------------------------------------------------------
+# smart_compress tests
+# ---------------------------------------------------------------------------
+from less_tokens import smart_compress, asmart_compress
+
+
+def test_smart_compress_returns_str_by_default():
+    out = smart_compress("Hello world")
+    assert isinstance(out, str)
+
+
+def test_smart_compress_rejects_non_string():
+    with pytest.raises(TypeError):
+        smart_compress(123)
+
+
+def test_smart_compress_fenced_code_block_is_verbatim():
+    """Fenced code blocks must be returned byte-for-byte."""
+    msg = (
+        "I was wondering if you could explain what this does.\n\n"
+        "```python\n"
+        "def hello():\n"
+        "    print('hello world')\n"
+        "```\n\n"
+        "Let me know."
+    )
+    out = smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    assert "def hello():" in out
+    assert "print('hello world')" in out
+
+
+def test_smart_compress_fenced_code_block_unchanged():
+    """The code block content must be identical, not just present."""
+    code = "```python\ndef add(a, b):\n    return a + b\n```"
+    msg = f"Please explain this.\n\n{code}\n\nThank you."
+    out = smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    assert code in out
+
+
+def test_smart_compress_inline_code_is_verbatim():
+    """Inline code tokens must not be compressed."""
+    msg = "I was wondering if you could run the `pip install less-tokens` command."
+    out = smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    assert "`pip install less-tokens`" in out
+
+
+def test_smart_compress_url_is_verbatim():
+    """Bare URLs must be returned untouched."""
+    msg = "Check the docs at https://docs.python.org for more details."
+    out = smart_compress(msg, remove_stopwords=1)
+    assert "https://docs.python.org" in out
+
+
+def test_smart_compress_markdown_link_is_verbatim():
+    """Markdown links must be returned untouched."""
+    msg = "See [the docs](https://docs.python.org) for more information."
+    out = smart_compress(msg, remove_stopwords=1)
+    assert "[the docs](https://docs.python.org)" in out
+
+
+def test_smart_compress_table_is_verbatim():
+    """Markdown tables must be returned byte-for-byte."""
+    table = "| Name | Score |\n| --- | --- |\n| Alice | 95 |\n| Bob | 87 |"
+    msg = f"Here is the summary.\n\n{table}\n\nLet me know what you think."
+    out = smart_compress(msg, remove_stopwords=1)
+    assert "| Alice | 95 |" in out
+    assert "| Bob | 87 |" in out
+
+
+def test_smart_compress_math_block_is_verbatim():
+    """Display math blocks must not be touched."""
+    msg = "The formula is $$E = mc^2$$ which is well known."
+    out = smart_compress(msg, remove_stopwords=1)
+    assert "$$E = mc^2$$" in out
+
+
+def test_smart_compress_prose_is_compressed():
+    """Natural language prose outside protected zones must be compressed."""
+    msg = "I was wondering if you could explain this concept to me in detail."
+    out = smart_compress(msg, remove_filler_phrases=1)
+    assert "wondering" not in out.lower()
+    assert "explain" in out.lower()
+
+
+def test_smart_compress_heading_prefix_preserved():
+    """The # prefix of a heading must survive; only the text is compressed."""
+    msg = "## I was wondering if you could explain this section\n\nSome body text."
+    out = smart_compress(msg, remove_filler_phrases=1)
+    assert out.startswith("## ")
+    assert "wondering" not in out.lower()
+
+
+def test_smart_compress_list_marker_preserved():
+    """List markers (- and 1.) must survive; only item text is compressed."""
+    msg = (
+        "- I was wondering if you could do task A\n"
+        "- I was wondering if you could do task B"
+    )
+    out = smart_compress(msg, remove_filler_phrases=1)
+    lines = [l for l in out.splitlines() if l.strip()]
+    assert all(l.startswith("- ") for l in lines), f"markers lost: {lines}"
+    assert "wondering" not in out.lower()
+
+
+def test_smart_compress_mixed_message():
+    """A realistic mixed message: prose + code + URL all handled correctly."""
+    msg = (
+        "I was wondering if you could explain what this function does.\n\n"
+        "```python\n"
+        "def greet(name):\n"
+        "    return f'Hello, {name}'\n"
+        "```\n\n"
+        "Also see https://docs.python.org for more details."
+    )
+    out = smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    # Code untouched
+    assert "def greet(name):" in out
+    assert "return f'Hello, {name}'" in out
+    # URL untouched
+    assert "https://docs.python.org" in out
+    # Filler phrase removed
+    assert "wondering" not in out.lower()
+
+
+def test_smart_compress_return_segments_shape():
+    """return_segments=True must return a dict with the right keys."""
+    msg = "Explain this.\n\n```python\npass\n```"
+    result = smart_compress(msg, return_segments=True)
+    assert isinstance(result, dict)
+    assert "compressed" in result
+    assert "segments" in result
+    for seg in result["segments"]:
+        assert "kind" in seg
+        assert "original" in seg
+        assert "compressed" in seg
+        assert seg["kind"] in ("prose", "protected")
+
+
+def test_smart_compress_return_segments_code_kind():
+    """Code block segments must have kind='protected'."""
+    code = "```python\npass\n```"
+    msg = f"Some text.\n\n{code}\n\nMore text."
+    result = smart_compress(msg, return_segments=True)
+    protected = [s for s in result["segments"] if s["kind"] == "protected"]
+    assert any("pass" in s["original"] for s in protected)
+
+
+def test_smart_compress_no_flags_near_noop():
+    """With default flags only, a plain prose message should be nearly unchanged."""
+    msg = "Hello world. This is a test message."
+    out = smart_compress(msg)
+    assert "Hello" in out
+    assert "test" in out
+
+
+def test_smart_compress_plain_prose_only():
+    """A message with no protected zones compresses the same as compress()."""
+    msg = "I was wondering if you could explain this concept."
+    out_smart = smart_compress(msg, remove_filler_phrases=1)
+    out_plain = compress(msg, remove_filler_phrases=1)
+    # They may differ slightly due to line-level batching, but both should
+    # drop the filler phrase.
+    assert "wondering" not in out_smart.lower()
+    assert "wondering" not in out_plain.lower()
+
+
+def test_smart_compress_empty_string():
+    """Empty input should return empty string without error."""
+    out = smart_compress("", remove_filler_phrases=1)
+    assert out == ""
+
+
+def test_smart_compress_code_only():
+    """A message that is entirely a code block should be returned verbatim."""
+    msg = "```python\ndef foo():\n    pass\n```"
+    out = smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    assert out == msg
+
+
+def test_asmart_compress_runs():
+    """Async variant must run and return the same result as the sync version."""
+    msg = "I was wondering if you could explain this."
+
+    async def go():
+        return await asmart_compress(msg, remove_filler_phrases=1)
+
+    result = asyncio.run(go())
+    assert isinstance(result, str)
+    assert "wondering" not in result.lower()
+
+
+def test_asmart_compress_concurrency():
+    """Multiple async smart_compress calls must run concurrently without error."""
+    messages = [
+        "I was wondering if you could do task A.",
+        "I was wondering if you could do task B.",
+        "I was wondering if you could do task C.",
+    ]
+
+    async def go():
+        return await asyncio.gather(
+            *[asmart_compress(m, remove_filler_phrases=1) for m in messages]
+        )
+
+    results = asyncio.run(go())
+    assert len(results) == 3
+    assert all("wondering" not in r.lower() for r in results)
+
+
+def test_asmart_compress_preserves_code():
+    """Async variant must still protect code blocks."""
+    msg = "Explain this.\n\n```python\npass\n```"
+
+    async def go():
+        return await asmart_compress(msg, remove_filler_phrases=1)
+
+    result = asyncio.run(go())
+    assert "pass" in result
+
+
+def test_smart_compress_conversation_history_pattern():
+    """
+    Simulate the primary use case: compressing every message in a conversation.
+    All protected zones across all messages must survive.
+    """
+    conversation = [
+        "I was wondering if you could explain how `list.append()` works in Python.",
+        (
+            "Sure! `list.append(x)` adds item `x` to the end of the list.\n\n"
+            "```python\n"
+            "my_list = [1, 2, 3]\n"
+            "my_list.append(4)\n"
+            "print(my_list)  # [1, 2, 3, 4]\n"
+            "```\n\n"
+            "See https://docs.python.org/3/tutorial/datastructures.html for more."
+        ),
+        "I was wondering if you could show me how to remove an item instead.",
+    ]
+
+    compressed = [
+        smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+        for msg in conversation
+    ]
+
+    # Inline code in user message
+    assert "`list.append()`" in compressed[0]
+    # Code block in LLM response
+    assert "my_list.append(4)" in compressed[1]
+    # URL in LLM response
+    assert "https://docs.python.org/3/tutorial/datastructures.html" in compressed[1]
+    # Filler phrase removed from both user messages
+    assert "wondering" not in compressed[0].lower()
+    assert "wondering" not in compressed[2].lower()
