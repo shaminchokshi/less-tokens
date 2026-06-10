@@ -492,3 +492,4 @@ def compress(
 
 
 __all__ = ["compress", "TECHNIQUES"]
+ 
