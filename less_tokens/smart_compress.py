@@ -125,21 +125,23 @@ def _segment(text: str) -> List[Segment]:
                 best_end = m.end()
                 best_text = m.group(0)
 
-        # Everything from pos to best_start is prose.
-        if best_start > pos:
-            prose_chunk = text[pos:best_start]
-            if prose_chunk:
-                segments.append((_PROSE, prose_chunk))
-
-        if best_start < n:
-            segments.append((_PROTECTED, best_text))
-            pos = best_end
-        else:
-            # No more protected zones; the rest is prose.
+        # No more protected zones from here on: everything left is prose.
+        # Emit it exactly once and stop. (Previously this tail was appended by
+        # BOTH the "prose before match" branch and this branch, which doubled
+        # every prose-only message.)
+        if best_start >= n:
             remaining = text[pos:]
             if remaining:
                 segments.append((_PROSE, remaining))
             break
+
+        # A protected match was found at best_start.
+        # Everything from pos up to it is prose.
+        if best_start > pos:
+            segments.append((_PROSE, text[pos:best_start]))
+
+        segments.append((_PROTECTED, best_text))
+        pos = best_end
 
     return segments
 
