@@ -38,8 +38,8 @@ print(compressed)
 - [The functions at a glance](#the-functions-at-a-glance)
 - [compress: shrink a prompt](#compress-shrink-a-prompt)
 - [reduce_document: turn a file into clean markdown](#reduce_document-turn-a-file-into-clean-markdown)
+- [reduce_image_ocr: pull text out of an image](#reduce_image_ocr-pull-text-out-of-an-image)
 - [compress_structured: protect the parts that matter](#compress_structured-protect-the-parts-that-matter)
-- [smart_compress: compress a conversation message](#smart_compress-compress-a-conversation-message)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
 - [Async support](#async-support)
 - [A complete example](#a-complete-example)
@@ -68,15 +68,17 @@ For most production use, the balanced setting is the sweet spot. Aggressive gets
 
 There's a second source of waste that bites you the moment your use case involves **files**. When your pipeline hands an LLM a raw PDF or Word document, you're shipping embedded fonts, positioning data, and office XML on top of the words you actually care about. If your use case only needs the *content* of the file, converting it to Markdown first cuts the token count enormously — that's what `reduce_document()` is for.
 
+And when your input is an **image** that has text in it — a screenshot, a scanned page, a photo of a sign or receipt — you can't send it to a text-only model at all, and even a multimodal model charges you image tokens for pixels when all you wanted were the words. `reduce_image_ocr()` runs OCR and hands you back just the text.
+
 ## Install
 
 ```bash
 pip install less-tokens
 ```
 
-That single command pulls in everything: the compressor, the `compare()` metrics stack, and the PDF/Word parsers used by `reduce_document()`. There are no optional extras to remember and nothing else to wire up.
+That single command pulls in everything: the compressor, the `compare()` metrics stack, the PDF/Word parsers used by `reduce_document()`, and the EasyOCR engine used by `reduce_image_ocr()`. There are no optional extras to remember and nothing else to wire up.
 
-On first use it downloads about 30 MB of NLTK data automatically. If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
+On first use it downloads about 30 MB of NLTK data automatically. The first time you call `reduce_image_ocr()`, EasyOCR downloads its detection and recognition models (a few hundred MB, cached afterward). If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
 
 Using a virtual environment is highly recommended:
 
@@ -94,18 +96,18 @@ pip install less-tokens
 
 ## The functions at a glance
 
-The library gives you five functions. Pick the one that matches what your use case actually needs:
+The library gives you six functions. Pick the one that matches what your use case actually needs:
 
 | Function | Reach for it when… |
 |----------|--------------------|
 | `compress()` | You have a prompt string and want it shorter |
 | `compress_structured()` | Your prompt mixes free instructions with parts you can't touch, like a JSON output schema or strict rules |
 | `reduce_document()` | Your input is a PDF or Word file and you only need its content as text, not a full file upload |
-| `smart_compress()` | You have a single conversation message (user or LLM) that mixes prose and code/tables/URLs and you want only the prose compressed |
+| `reduce_image_ocr()` | Your input is an image (PNG/JPG/JPEG) with text in it and you want the text out |
 | `compare()` | You want to prove the compression didn't change the model's answer |
-| `acompress()` / `acompress_structured()` / `areduce_document()` / `asmart_compress()` | You're doing any of the above inside an async event loop |
+| `acompress()` / `acompress_structured()` / `areduce_document()` / `areduce_image_ocr()` | You're doing any of the above inside an async event loop |
 
-The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. If you're compressing a **conversation history**, use `smart_compress()` on each message. When you want to know what it cost you in quality, run `compare()`.
+The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. If you start with an **image**, run `reduce_image_ocr()` to get text, then optionally `compress()` that. When you want to know what it cost you in quality, run `compare()`.
 
 ## compress: shrink a prompt
 
@@ -277,6 +279,104 @@ lean = compress(content,
 
 One caution worth building into your code: if the document has **tables** you need intact, aggressive `compress()` flags (stopword removal, POS-keep) will chew up the cell text and pipe structure. Either keep `reduce_document(..., include_tables=False)` if you don't need them, or protect the table with `compress_structured()` (next section).
 
+## reduce_image_ocr: pull text out of an image
+
+When your input is an **image** with text in it — a screenshot, a scanned page exported as a PNG, a photo of a sign, a label, or a receipt — you have the same problem `reduce_document()` solves for PDFs, but worse. A text-only model can't read the image at all, and a multimodal model bills you image tokens for every pixel when all you actually wanted were the words.
+
+`reduce_image_ocr()` runs OCR (EasyOCR under the hood) and hands you back just the text. It's the image-side companion to `reduce_document()`: same idea, same shape — something the model can't cheaply read goes in, clean text comes out.
+
+It's built to be trivial to call. The simplest possible use is one line:
+
+```python
+from less_tokens import reduce_image_ocr
+
+text = reduce_image_ocr("screenshot.png")
+print(text)
+```
+
+```
+Invoice #4821
+Total due: $1,240.00
+Payment terms: Net 30
+```
+
+That's it — pass an image, get text. English is the default; everything else is an optional keyword argument.
+
+### What you can pass as the image
+
+You're not locked into file paths. `reduce_image_ocr()` accepts whatever is most convenient in your code:
+
+| Input type | Example |
+|------------|---------|
+| File path (str or `Path`) | `reduce_image_ocr("page.jpg")` |
+| Raw bytes | `reduce_image_ocr(image_bytes)` |
+| A file-like object | `reduce_image_ocr(open("p.png", "rb"))` — also a web-upload object or `io.BytesIO` |
+| A `PIL.Image` | `reduce_image_ocr(Image.open("p.png"))` |
+| A numpy array | `reduce_image_ocr(np_array)` |
+
+PNG, JPG, and JPEG are the primary targets; BMP, TIFF, and WebP also work.
+
+### Parameters
+
+| Parameter | What it does |
+|-----------|--------------|
+| `image` | The image to read (any of the input types above). |
+| `languages` | Language code or list of codes. Default `("en",)`. Latin-script languages combine freely; some non-Latin scripts (`"ch_sim"`, `"ja"`, `"ko"`, `"th"`, ...) may only be used alone or alongside `"en"`. |
+| `gpu` | Use a CUDA GPU if available. Default `False` (CPU). Set `True` for a large speedup when you have the hardware and a CUDA-enabled PyTorch. |
+| `min_confidence` | Drop detections below this confidence (0.0–1.0). Default `0.0` keeps everything. Ignored when `paragraph=True`. |
+| `paragraph` | If `True`, group nearby detections into paragraph blocks for more natural reading order. Default `False`. |
+| `separator` | String joining the detected pieces in the returned text. Default is a newline. |
+| `detail` | If `True`, return a list of `{"text", "confidence", "bbox"}` dicts instead of a single string. |
+
+### Getting per-detection detail
+
+By default you get one clean string. When you need to filter or inspect what was found — say, to drop low-confidence noise — ask for detail:
+
+```python
+from less_tokens import reduce_image_ocr
+
+detections = reduce_image_ocr("sign.png", min_confidence=0.5, detail=True)
+for d in detections:
+    print(d["confidence"], d["text"])
+```
+
+Each dict carries the recognised `text`, the `confidence` (a float, or `None` in `paragraph` mode), and the `bbox` polygon of where it was found on the image.
+
+### Other languages
+
+Pass one code or several. The default is English:
+
+```python
+# A single non-English language
+reduce_image_ocr("menu.jpg", languages="fr")
+
+# Several Latin-script languages together
+reduce_image_ocr("flyer.png", languages=["en", "es", "de"])
+```
+
+A note on combining scripts: EasyOCR lets Latin-based languages mix freely, but several non-Latin scripts (Chinese, Japanese, Korean, Thai) can only be used on their own or paired with English. If you select two incompatible scripts you'll get an error from the engine, not from this function.
+
+### Pairing it with compress
+
+Same two-step move as documents — get the text out, then compress it:
+
+```python
+from less_tokens import reduce_image_ocr, compress
+
+# Step 1: image -> text (OCR)
+text = reduce_image_ocr("handwritten_note.jpg")
+
+# Step 2: text -> compressed text
+lean = compress(text,
+                remove_filler_phrases=1,
+                remove_stopwords=1,
+                apply_contractions=1)
+```
+
+### A note on performance
+
+The first call builds an EasyOCR reader, which loads the detection and recognition models — slow the first time (and it downloads the weights once). After that the reader is cached per language set, so subsequent calls in the same process are fast. If you're processing a batch, reuse the same `languages` argument so you hit the cache, and reach for the async variant below to run several images concurrently.
+
 ## compress_structured: protect the parts that matter
 
 The real prompts your application builds are rarely just instructions. They carry parts that must survive exactly — a JSON output schema, an example the model copies, or rules that break if a single word is dropped. Compressing those parts the same way you compress the instruction body will quietly corrupt your output contract.
@@ -370,45 +470,6 @@ result = compress_structured(
 print(result["compressed"])     # the assembled prompt
 for zone in result["zones"]:
     print(zone["level"], zone["original_len"], "->", zone["compressed_len"])
-```
-
-## smart_compress: compress a conversation message
-
-When you are working with a multi-turn conversation history — a list of user inputs and LLM responses — you cannot run `compress()` directly on each message. LLM responses routinely mix natural language prose with elements that must never be touched: fenced code blocks, inline code, Markdown tables, URLs, math expressions, and HTML. Compressing those would corrupt the code or break the output contract.
-
-`smart_compress()` solves this. It parses each message, automatically detects every protected zone, and compresses only the natural language prose around them. Apply it to every message in your history:
-
-```python
-from less_tokens import smart_compress
-
-compressed_history = [
-    smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
-    for msg in conversation
-]
-```
-
-### What is protected and what is compressed
-
-| Protected (returned verbatim) | Compressed (natural language only) |
-|-------------------------------|-------------------------------------|
-| Fenced code blocks (` ``` `) | Paragraph prose |
-| Indented code blocks | Heading text (the `#` prefix is kept) |
-| Inline code (`` `backticks` ``) | List-item text (the `-` / `1.` marker is kept) |
-| Markdown tables | |
-| Bare URLs and Markdown links | |
-| Math blocks (`$$...$$`) and inline math (`$...$`) | |
-| HTML tags | |
-| JSON / array blocks | |
-
-### Debugging with return_segments
-
-Pass `return_segments=True` to see exactly what was protected and what was compressed:
-
-```python
-result = smart_compress(msg, remove_filler_phrases=1, return_segments=True)
-print(result["compressed"])
-for seg in result["segments"]:
-    print(seg["kind"], "->", seg["original"][:40])
 ```
 
 ## compare: measure the quality tradeoff
@@ -573,11 +634,12 @@ If your use case runs inside an async web server or processes prompts in large c
 | `compress()` | `acompress()` |
 | `compress_structured()` | `acompress_structured()` |
 | `reduce_document()` | `areduce_document()` |
-| `smart_compress()` | `asmart_compress()` |
+| `reduce_image_ocr()` | `areduce_image_ocr()` |
 
 ```python
 import asyncio
-from less_tokens import acompress, acompress_structured, areduce_document, asmart_compress
+from less_tokens import (acompress, acompress_structured,
+                         areduce_document, areduce_image_ocr)
 
 async def main():
     # Async version of compress()
@@ -596,23 +658,27 @@ async def main():
     # Async version of reduce_document()
     content = await areduce_document("report.pdf")
 
-    # Async version of smart_compress() — compress a full conversation history concurrently
-    compressed_history = await asyncio.gather(
-        *[asmart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
-          for msg in conversation]
+    # Async version of reduce_image_ocr()
+    caption = await areduce_image_ocr("screenshot.png")
+
+    # Compress many prompts at once
+    results = await asyncio.gather(
+        acompress(p1, remove_stopwords=1),
+        acompress(p2, remove_stopwords=1),
+        acompress(p3, remove_stopwords=1),
     )
 
-    # Or reduce a batch of uploaded files at once
+    # Or reduce a batch of uploaded files / images at once
     docs = await asyncio.gather(
         areduce_document("a.pdf"),
         areduce_document("b.docx"),
-        areduce_document("c.txt"),
+        areduce_image_ocr("c.png"),
     )
 
 asyncio.run(main())
 ```
 
-This is what you want when you're compressing inside FastAPI or aiohttp, or reducing a batch of user-uploaded files concurrently.
+This is what you want when you're compressing inside FastAPI or aiohttp, or reducing a batch of user-uploaded files and images concurrently.
 
 ## A complete example
 
@@ -669,6 +735,8 @@ print(f"BERTScore F1:    {metrics['output_similarity']['bertscore_f']}")
 
 You pulled the content out of the file, shrank the wordy instruction, kept the rules safe, kept the JSON schema exact, and confirmed with `compare()` that the model still returns the same structured answer. That's the full library working together on one realistic use case.
 
+If the user had uploaded a **screenshot** instead of a PDF, the only change is the first line — swap `reduce_document("customer_review.pdf")` for `reduce_image_ocr("customer_review.png")` and the rest of the pipeline is identical.
+
 ## Under the hood
 
 `less-tokens` is built on classical lexical NLP — the same techniques used in information retrieval and pre-neural NLP pipelines, packaged together with sensible defaults and safety guarantees so you can drop them into real code:
@@ -682,14 +750,15 @@ You pulled the content out of the file, shrank the wordy instruction, kept the r
 - **NLTK's BLEU** with method-1 smoothing
 - **PyMuPDF** gives us the raw text spans (with font size and bold/italic flags) and table regions of a PDF; `reduce_document()` reconstructs the Markdown from those primitives itself — headings from relative font size, emphasis from span flags, lists from leading glyphs, and reading order from on-page position
 - **python-docx** reads Word documents in true reading order, which `reduce_document()` maps to Markdown headings, lists, and tables
+- **EasyOCR** powers `reduce_image_ocr()`; the reader is cached per language set so the (heavy) models load once per process and are reused on every subsequent call
 
-Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte — which is exactly what you want when the thing sits in a deterministic pipeline. Compression itself runs in well under 100 ms on a single CPU core, and document reduction is deterministic too: the same file always produces the same Markdown.
+Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte — which is exactly what you want when the thing sits in a deterministic pipeline. Compression itself runs in well under 100 ms on a single CPU core, and document reduction is deterministic too: the same file always produces the same Markdown. (OCR is the one stage that depends on a learned model rather than pure lexical rules, so treat its output as best-effort recognition rather than a deterministic transform.)
 
 ## Limitations
 
 A few honest caveats so you know whether this fits your use case before you build on it.
 
-English only. NLTK stopwords and WordNet are English-language. Multilingual support is open work.
+English only for the *lexical* techniques. NLTK stopwords and WordNet are English-language, so `compress()` is English-only. (OCR via `reduce_image_ocr()` supports many languages through EasyOCR — that's a separate engine.) Multilingual compression is open work.
 
 Best on short and medium prompts. Roughly 60 to 2000 characters. Very long retrieval-augmented contexts aren't the target use case. For those, look at learned compressors like [LLMLingua](https://github.com/microsoft/LLMLingua).
 
@@ -699,7 +768,9 @@ Quality is task-dependent. Open-ended Q&A and creative writing tolerate compress
 
 `compare()` measures similarity, not correctness. If your original prompt produces a bad LLM output, a similar compressed output is still bad. Make sure your prompts work first, then compress.
 
-`reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty — run OCR first if that's your input. It also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
+`reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty — that's exactly what `reduce_image_ocr()` is for. `reduce_document()` also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
+
+`reduce_image_ocr()` is only as good as OCR. Recognition quality depends on image resolution, contrast, and how clean the text is; low-resolution, skewed, or noisy images yield weaker results, and stylised or handwritten text is harder than printed text. It is not deterministic in the way the lexical functions are, and the first call downloads the EasyOCR models (a few hundred MB). For perfectly clean digital PDFs, prefer `reduce_document()` — OCR is for when the text only exists as pixels.
 
 ## Contributing
 

@@ -14,6 +14,13 @@ Markdown (content only — no layout, fonts, or metadata):
 
 - reduce_document(path) -> markdown string
 
+Image OCR
+---------
+For pulling the text out of an image (PNG / JPG / JPEG / ...) so you can drop it
+straight into a prompt:
+
+- reduce_image_ocr(image) -> text string
+
 Structured (zone-aware) compression
 ------------------------------------
 For prompts that mix free-text instructions with parts that must NOT be
@@ -34,6 +41,8 @@ Async variants
 --------------
 - acompress(prompt, **flags)
 - acompress_structured(...)
+- areduce_document(path)
+- areduce_image_ocr(image)
 - asmart_compress(message, **flags)
 
 Quick start
@@ -46,6 +55,10 @@ Quick start
 >>> from less_tokens import reduce_document
 >>> reduce_document("contract.pdf")[:40]
 '# Master Services Agreement\\n## Term ...'
+
+>>> from less_tokens import reduce_image_ocr
+>>> reduce_image_ocr("screenshot.png")
+'extracted text from the image'
 
 >>> from less_tokens import compress_structured
 >>> compress_structured(
@@ -65,6 +78,7 @@ Quick start
 from .compressor import compress, TECHNIQUES
 from .metrics import compare
 from .document import reduce_document, areduce_document
+from .image import reduce_image_ocr, areduce_image_ocr
 from .structured import (
     compress_structured,
     acompress,
@@ -75,12 +89,14 @@ from .structured import (
 )
 from .smart_compress import smart_compress, asmart_compress
 
-__version__ = "0.4.0"
+__version__ = "0.5.1"
 __all__ = [
     "compress",
     "compare",
     "reduce_document",
     "areduce_document",
+    "reduce_image_ocr",
+    "areduce_image_ocr",
     "compress_structured",
     "acompress",
     "acompress_structured",
