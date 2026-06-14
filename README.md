@@ -40,6 +40,7 @@ print(compressed)
 - [reduce_document: turn a file into clean markdown](#reduce_document-turn-a-file-into-clean-markdown)
 - [reduce_image_ocr: pull text out of an image](#reduce_image_ocr-pull-text-out-of-an-image)
 - [compress_structured: protect the parts that matter](#compress_structured-protect-the-parts-that-matter)
+- [smart_compress: compress a conversation message](#smart_compress-compress-a-conversation-message)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
 - [Async support](#async-support)
 - [A complete example](#a-complete-example)
@@ -104,10 +105,11 @@ The library gives you six functions. Pick the one that matches what your use cas
 | `compress_structured()` | Your prompt mixes free instructions with parts you can't touch, like a JSON output schema or strict rules |
 | `reduce_document()` | Your input is a PDF or Word file and you only need its content as text, not a full file upload |
 | `reduce_image_ocr()` | Your input is an image (PNG/JPG/JPEG) with text in it and you want the text out |
+| `smart_compress()` | You have a single conversation message (user or LLM) that mixes prose and code/tables/URLs and you want only the prose compressed |
 | `compare()` | You want to prove the compression didn't change the model's answer |
-| `acompress()` / `acompress_structured()` / `areduce_document()` / `areduce_image_ocr()` | You're doing any of the above inside an async event loop |
+| `acompress()` / `acompress_structured()` / `areduce_document()` / `areduce_image_ocr()` / `asmart_compress()` | You're doing any of the above inside an async event loop |
 
-The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. If you start with an **image**, run `reduce_image_ocr()` to get text, then optionally `compress()` that. When you want to know what it cost you in quality, run `compare()`.
+The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. If you start with an **image**, run `reduce_image_ocr()` to get text, then optionally `compress()` that. If you're compressing a **conversation history**, use `smart_compress()` on each message. When you want to know what it cost you in quality, run `compare()`.
 
 ## compress: shrink a prompt
 
@@ -472,6 +474,45 @@ for zone in result["zones"]:
     print(zone["level"], zone["original_len"], "->", zone["compressed_len"])
 ```
 
+## smart_compress: compress a conversation message
+
+When you are working with a multi-turn conversation history — a list of user inputs and LLM responses — you cannot run `compress()` directly on each message. LLM responses routinely mix natural language prose with elements that must never be touched: fenced code blocks, inline code, Markdown tables, URLs, math expressions, and HTML. Compressing those would corrupt the code or break the output contract.
+
+`smart_compress()` solves this. It parses each message, automatically detects every protected zone, and compresses only the natural language prose around them. Apply it to every message in your history:
+
+```python
+from less_tokens import smart_compress
+
+compressed_history = [
+    smart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+    for msg in conversation
+]
+```
+
+### What is protected and what is compressed
+
+| Protected (returned verbatim) | Compressed (natural language only) |
+|-------------------------------|-------------------------------------|
+| Fenced code blocks (` ``` `) | Paragraph prose |
+| Indented code blocks | Heading text (the `#` prefix is kept) |
+| Inline code (`` `backticks` ``) | List-item text (the `-` / `1.` marker is kept) |
+| Markdown tables | |
+| Bare URLs and Markdown links | |
+| Math blocks (`$$...$$`) and inline math (`$...$`) | |
+| HTML tags | |
+| JSON / array blocks | |
+
+### Debugging with return_segments
+
+Pass `return_segments=True` to see exactly what was protected and what was compressed:
+
+```python
+result = smart_compress(msg, remove_filler_phrases=1, return_segments=True)
+print(result["compressed"])
+for seg in result["segments"]:
+    print(seg["kind"], "->", seg["original"][:40])
+```
+
 ## compare: measure the quality tradeoff
 
 Compression is only worth shipping if the LLM still produces the answer your use case depends on. `compare()` quantifies that across six different similarity metrics, so you can decide based on numbers instead of vibes.
@@ -635,11 +676,12 @@ If your use case runs inside an async web server or processes prompts in large c
 | `compress_structured()` | `acompress_structured()` |
 | `reduce_document()` | `areduce_document()` |
 | `reduce_image_ocr()` | `areduce_image_ocr()` |
+| `smart_compress()` | `asmart_compress()` |
 
 ```python
 import asyncio
 from less_tokens import (acompress, acompress_structured,
-                         areduce_document, areduce_image_ocr)
+                         areduce_document, areduce_image_ocr, asmart_compress)
 
 async def main():
     # Async version of compress()
@@ -661,11 +703,10 @@ async def main():
     # Async version of reduce_image_ocr()
     caption = await areduce_image_ocr("screenshot.png")
 
-    # Compress many prompts at once
-    results = await asyncio.gather(
-        acompress(p1, remove_stopwords=1),
-        acompress(p2, remove_stopwords=1),
-        acompress(p3, remove_stopwords=1),
+    # Async version of smart_compress() — compress a full conversation history concurrently
+    compressed_history = await asyncio.gather(
+        *[asmart_compress(msg, remove_filler_phrases=1, remove_stopwords=1)
+          for msg in conversation]
     )
 
     # Or reduce a batch of uploaded files / images at once
