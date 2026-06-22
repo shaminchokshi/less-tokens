@@ -324,7 +324,6 @@ PNG, JPG, and JPEG are the primary targets; BMP, TIFF, and WebP also work.
 |-----------|--------------|
 | `image` | The image to read (any of the input types above). |
 | `languages` | Language code or list of codes. Default `("en",)`. Latin-script languages combine freely; some non-Latin scripts (`"ch_sim"`, `"ja"`, `"ko"`, `"th"`, ...) may only be used alone or alongside `"en"`. |
-| `gpu` | Use a CUDA GPU if available. Default `False` (CPU). Set `True` for a large speedup when you have the hardware and a CUDA-enabled GPU backend. |
 | `min_confidence` | Drop detections below this confidence (0.0–1.0). Default `0.0` keeps everything. Ignored when `paragraph=True`. |
 | `paragraph` | If `True`, group nearby detections into paragraph blocks for more natural reading order. Default `False`. |
 | `separator` | String joining the detected pieces in the returned text. Default is a newline. |
