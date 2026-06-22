@@ -77,9 +77,9 @@ And when your input is an **image** that has text in it — a screenshot, a scan
 pip install less-tokens
 ```
 
-That single command pulls in everything: the compressor, the `compare()` metrics stack, the PDF/Word parsers used by `reduce_document()`, and the EasyOCR engine used by `reduce_image_ocr()`. There are no optional extras to remember and nothing else to wire up.
+That single command pulls in everything: the compressor, the `compare()` metrics stack, the PDF/Word parsers used by `reduce_document()`, and the OCR engine used by `reduce_image_ocr()`. There are no optional extras to remember and nothing else to wire up.
 
-On first use it downloads about 30 MB of NLTK data automatically. The first time you call `reduce_image_ocr()`, EasyOCR downloads its detection and recognition models (a few hundred MB, cached afterward). If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
+On first use it downloads about 30 MB of NLTK data automatically. The first time you call `reduce_image_ocr()`, the OCR engine downloads its detection and recognition models (a few hundred MB, cached afterward). If you also call `compare()`, BERTScore will download an additional ~1 GB model the first time. You can skip that with `bertscore=False` if you don't need it.
 
 Using a virtual environment is highly recommended:
 
@@ -285,7 +285,7 @@ One caution worth building into your code: if the document has **tables** you ne
 
 When your input is an **image** with text in it — a screenshot, a scanned page exported as a PNG, a photo of a sign, a label, or a receipt — you have the same problem `reduce_document()` solves for PDFs, but worse. A text-only model can't read the image at all, and a multimodal model bills you image tokens for every pixel when all you actually wanted were the words.
 
-`reduce_image_ocr()` runs OCR (EasyOCR under the hood) and hands you back just the text. It's the image-side companion to `reduce_document()`: same idea, same shape — something the model can't cheaply read goes in, clean text comes out.
+`reduce_image_ocr()` runs OCR and hands you back just the text. It's the image-side companion to `reduce_document()`: same idea, same shape — something the model can't cheaply read goes in, clean text comes out.
 
 It's built to be trivial to call. The simplest possible use is one line:
 
@@ -324,7 +324,7 @@ PNG, JPG, and JPEG are the primary targets; BMP, TIFF, and WebP also work.
 |-----------|--------------|
 | `image` | The image to read (any of the input types above). |
 | `languages` | Language code or list of codes. Default `("en",)`. Latin-script languages combine freely; some non-Latin scripts (`"ch_sim"`, `"ja"`, `"ko"`, `"th"`, ...) may only be used alone or alongside `"en"`. |
-| `gpu` | Use a CUDA GPU if available. Default `False` (CPU). Set `True` for a large speedup when you have the hardware and a CUDA-enabled PyTorch. |
+| `gpu` | Use a CUDA GPU if available. Default `False` (CPU). Set `True` for a large speedup when you have the hardware and a CUDA-enabled GPU backend. |
 | `min_confidence` | Drop detections below this confidence (0.0–1.0). Default `0.0` keeps everything. Ignored when `paragraph=True`. |
 | `paragraph` | If `True`, group nearby detections into paragraph blocks for more natural reading order. Default `False`. |
 | `separator` | String joining the detected pieces in the returned text. Default is a newline. |
@@ -356,7 +356,7 @@ reduce_image_ocr("menu.jpg", languages="fr")
 reduce_image_ocr("flyer.png", languages=["en", "es", "de"])
 ```
 
-A note on combining scripts: EasyOCR lets Latin-based languages mix freely, but several non-Latin scripts (Chinese, Japanese, Korean, Thai) can only be used on their own or paired with English. If you select two incompatible scripts you'll get an error from the engine, not from this function.
+A note on combining scripts: the OCR engine lets Latin-based languages mix freely, but several non-Latin scripts (Chinese, Japanese, Korean, Thai) can only be used on their own or paired with English. If you select two incompatible scripts you'll get an error from the engine, not from this function.
 
 ### Pairing it with compress
 
@@ -377,7 +377,7 @@ lean = compress(text,
 
 ### A note on performance
 
-The first call builds an EasyOCR reader, which loads the detection and recognition models — slow the first time (and it downloads the weights once). After that the reader is cached per language set, so subsequent calls in the same process are fast. If you're processing a batch, reuse the same `languages` argument so you hit the cache, and reach for the async variant below to run several images concurrently.
+The first call builds an OCR reader, which loads the detection and recognition models — slow the first time (and it downloads the weights once). After that the reader is cached per language set, so subsequent calls in the same process are fast. If you're processing a batch, reuse the same `languages` argument so you hit the cache, and reach for the async variant below to run several images concurrently.
 
 ## compress_structured: protect the parts that matter
 
@@ -791,7 +791,7 @@ If the user had uploaded a **screenshot** instead of a PDF, the only change is t
 - **NLTK's BLEU** with method-1 smoothing
 - **PyMuPDF** gives us the raw text spans (with font size and bold/italic flags) and table regions of a PDF; `reduce_document()` reconstructs the Markdown from those primitives itself — headings from relative font size, emphasis from span flags, lists from leading glyphs, and reading order from on-page position
 - **python-docx** reads Word documents in true reading order, which `reduce_document()` maps to Markdown headings, lists, and tables
-- **EasyOCR** powers `reduce_image_ocr()`; the reader is cached per language set so the (heavy) models load once per process and are reused on every subsequent call
+- **OCR** powers `reduce_image_ocr()`; the reader is cached per language set so the (heavy) models load once per process and are reused on every subsequent call
 
 Every compression technique is a pure function. Same input plus same flags always produces the same output, byte for byte — which is exactly what you want when the thing sits in a deterministic pipeline. Compression itself runs in well under 100 ms on a single CPU core, and document reduction is deterministic too: the same file always produces the same Markdown. (OCR is the one stage that depends on a learned model rather than pure lexical rules, so treat its output as best-effort recognition rather than a deterministic transform.)
 
@@ -799,7 +799,7 @@ Every compression technique is a pure function. Same input plus same flags alway
 
 A few honest caveats so you know whether this fits your use case before you build on it.
 
-English only for the *lexical* techniques. NLTK stopwords and WordNet are English-language, so `compress()` is English-only. (OCR via `reduce_image_ocr()` supports many languages through EasyOCR — that's a separate engine.) Multilingual compression is open work.
+English only for the *lexical* techniques. NLTK stopwords and WordNet are English-language, so `compress()` is English-only. (OCR via `reduce_image_ocr()` supports many languages — that's a separate engine.) Multilingual compression is open work.
 
 Best on short and medium prompts. Roughly 60 to 2000 characters. Very long retrieval-augmented contexts aren't the target use case. For those, look at learned compressors like [LLMLingua](https://github.com/microsoft/LLMLingua).
 
@@ -811,7 +811,7 @@ Quality is task-dependent. Open-ended Q&A and creative writing tolerate compress
 
 `reduce_document()` reads text, not pixels. Scanned PDFs or image-only documents have no extractable text layer, so they come back empty — that's exactly what `reduce_image_ocr()` is for. `reduce_document()` also doesn't handle the old binary `.doc` format (convert to `.docx` first), and complex multi-column or heavily nested table layouts may not map cleanly onto Markdown.
 
-`reduce_image_ocr()` is only as good as OCR. Recognition quality depends on image resolution, contrast, and how clean the text is; low-resolution, skewed, or noisy images yield weaker results, and stylised or handwritten text is harder than printed text. It is not deterministic in the way the lexical functions are, and the first call downloads the EasyOCR models (a few hundred MB). For perfectly clean digital PDFs, prefer `reduce_document()` — OCR is for when the text only exists as pixels.
+`reduce_image_ocr()` is only as good as OCR. Recognition quality depends on image resolution, contrast, and how clean the text is; low-resolution, skewed, or noisy images yield weaker results, and stylised or handwritten text is harder than printed text. It is not deterministic in the way the lexical functions are, and the first call downloads the OCR models (a few hundred MB). For perfectly clean digital PDFs, prefer `reduce_document()` — OCR is for when the text only exists as pixels.
 
 ## Contributing
 
