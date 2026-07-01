@@ -46,7 +46,7 @@ print(compressed)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
 - [Async support](#async-support)
 - [A complete example](#a-complete-example)
-- [Local backend for the VS Code / Cursor extension](#local-backend-for-the-vs-code--cursor-extension)
+- [Local backend for the VS Code extension](#local-backend-for-the-vs-code--cursor-extension)
 - [Under the hood](#under-the-hood)
 - [Limitations](#limitations)
 
@@ -780,9 +780,9 @@ You pulled the content out of the file, shrank the wordy instruction, kept the r
 
 If the user had uploaded a **screenshot** instead of a PDF, the only change is the first line — swap `reduce_document("customer_review.pdf")` for `reduce_image_ocr("customer_review.png")` and the rest of the pipeline is identical.
 
-## Local backend for the VS Code / Cursor extension
+## Local backend for the VS Code extension
 
-The **less-tokens VS Code / Cursor extension** compresses the prompts you write in Copilot / Cursor before you send them. It doesn't do the compression inside the editor — it calls a small backend that runs this library for it. You can run that backend **on your own machine**, so nothing you type or attach ever leaves your computer: the extension calls `http://127.0.0.1:8000`, the backend compresses locally, and hands the result back.
+The **less-tokens VS Code extension** compresses the prompts you write in Copilot / Cursor before you send them. It doesn't do the compression inside the editor — it calls a small backend that runs this library for it. You can run that backend **on your own machine**, so nothing you type or attach ever leaves your computer: the extension calls `http://127.0.0.1:8000`, the backend compresses locally, and hands the result back.
 
 Installing the package gives you the backend and a command to start it:
 
@@ -800,7 +800,7 @@ Leave it running. Uvicorn comes up on `http://127.0.0.1:8000` — loopback only,
 
 > If `less-tokens-serve` isn't found, the same server runs with `python -m less_tokens.server`. Change the port with `less-tokens-serve --port 9000` (or set `LESS_TOKENS_PORT`).
 
-Then point the extension at it. In VS Code / Cursor **Settings**, set:
+Then point the extension at it. In VS Code **Settings**, set:
 
 ```
 lessTokens.apiUrl = http://127.0.0.1:8000

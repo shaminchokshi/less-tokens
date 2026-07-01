@@ -89,7 +89,7 @@ from .structured import (
 )
 from .smart_compress import smart_compress, asmart_compress
 
-__version__ = "0.6.6"
+__version__ = "0.6.7"
 __all__ = [
     "compress",
     "compare",
