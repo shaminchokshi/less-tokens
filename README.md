@@ -6,8 +6,10 @@
 
 <p align="center">
   <a href="https://pypi.org/project/less-tokens/"><img src="https://img.shields.io/pypi/v/less-tokens.svg" alt="PyPI version"></a>
+  <a href="https://pepy.tech/projects/less-tokens"><img src="https://static.pepy.tech/personalized-badge/less-tokens?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" alt="PyPI Downloads"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
+  <a href="https://www.lesstokens.org/"><img src="https://img.shields.io/badge/website-lesstokens.org-blue.svg" alt="Website"></a>
 </p>
 
 <p align="center">
@@ -44,6 +46,7 @@ print(compressed)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
 - [Async support](#async-support)
 - [A complete example](#a-complete-example)
+- [Local backend for the VS Code / Cursor extension](#local-backend-for-the-vs-code--cursor-extension)
 - [Under the hood](#under-the-hood)
 - [Limitations](#limitations)
 
@@ -776,6 +779,64 @@ print(f"BERTScore F1:    {metrics['output_similarity']['bertscore_f']}")
 You pulled the content out of the file, shrank the wordy instruction, kept the rules safe, kept the JSON schema exact, and confirmed with `compare()` that the model still returns the same structured answer. That's the full library working together on one realistic use case.
 
 If the user had uploaded a **screenshot** instead of a PDF, the only change is the first line — swap `reduce_document("customer_review.pdf")` for `reduce_image_ocr("customer_review.png")` and the rest of the pipeline is identical.
+
+## Local backend for the VS Code / Cursor extension
+
+The **less-tokens VS Code / Cursor extension** compresses the prompts you write in Copilot / Cursor before you send them. It doesn't do the compression inside the editor — it calls a small backend that runs this library for it. You can run that backend **on your own machine**, so nothing you type or attach ever leaves your computer: the extension calls `http://127.0.0.1:8000`, the backend compresses locally, and hands the result back.
+
+Installing the package gives you the backend and a command to start it:
+
+```bash
+pip install less-tokens
+```
+
+Start the server:
+
+```bash
+less-tokens-serve
+```
+
+Leave it running. Uvicorn comes up on `http://127.0.0.1:8000` — loopback only, so it's reachable only from your own machine. The first request runs a one-time NLTK warmup.
+
+> If `less-tokens-serve` isn't found, the same server runs with `python -m less_tokens.server`. Change the port with `less-tokens-serve --port 9000` (or set `LESS_TOKENS_PORT`).
+
+Then point the extension at it. In VS Code / Cursor **Settings**, set:
+
+```
+lessTokens.apiUrl = http://127.0.0.1:8000
+```
+
+With the server running and that URL set, the extension's **Compress**, structured-zone, and **attach file (OCR / reduce)** features all run against your local backend.
+
+### Check it's working
+
+Open the auto-generated API docs in your browser while the server is running:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+Or from a terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+# -> {"status":"ok"}
+```
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Liveness check (the extension pings this) |
+| GET | `/techniques` | List the eleven compression flag names |
+| GET | `/warmup` | Pre-load NLTK/WordNet so the first call is fast |
+| POST | `/compress` | Compress a single prompt string |
+| POST | `/smart_compress_batch` | Compress conversation messages (code / tables safe) |
+| POST | `/compress_structured` | Zone-aware compression (free / careful / protected) |
+| POST | `/reduce_document` | PDF / Word / text file → clean Markdown |
+| POST | `/reduce_image` | Image → OCR'd text |
+
+Every endpoint is a thin wrapper over the library functions documented above. The local backend adds no accounts, database, or storage — it compresses in memory and returns the result.
 
 ## Under the hood
 
