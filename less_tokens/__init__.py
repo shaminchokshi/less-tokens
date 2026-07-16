@@ -88,14 +88,17 @@ from .structured import (
     VALID_LEVELS,
 )
 from .smart_compress import smart_compress, asmart_compress
+from .resize import reduce_image_resize, areduce_image_resize
 
-__version__ = "0.6.7"
+__version__ = "0.7.0"
 __all__ = [
     "compress",
     "compare",
     "reduce_document",
     "areduce_document",
     "reduce_image_ocr",
+    "reduce_image_resize",
+    "areduce_image_resize",
     "areduce_image_ocr",
     "compress_structured",
     "acompress",

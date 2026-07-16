@@ -41,6 +41,7 @@ print(compressed)
 - [compress: shrink a prompt](#compress-shrink-a-prompt)
 - [reduce_document: turn a file into clean markdown](#reduce_document-turn-a-file-into-clean-markdown)
 - [reduce_image_ocr: pull text out of an image](#reduce_image_ocr-pull-text-out-of-an-image)
+- [reduce_image_resize: shrink an image](#reduce_image_resize-shrink-an-image)
 - [compress_structured: protect the parts that matter](#compress_structured-protect-the-parts-that-matter)
 - [smart_compress: compress a conversation message](#smart_compress-compress-a-conversation-message)
 - [compare: measure the quality tradeoff](#compare-measure-the-quality-tradeoff)
@@ -100,7 +101,7 @@ pip install less-tokens
 
 ## The functions at a glance
 
-The library gives you six functions. Pick the one that matches what your use case actually needs:
+The library gives you seven functions. Pick the one that matches what your use case actually needs:
 
 | Function | Reach for it when… |
 |----------|--------------------|
@@ -108,9 +109,10 @@ The library gives you six functions. Pick the one that matches what your use cas
 | `compress_structured()` | Your prompt mixes free instructions with parts you can't touch, like a JSON output schema or strict rules |
 | `reduce_document()` | Your input is a PDF or Word file and you only need its content as text, not a full file upload |
 | `reduce_image_ocr()` | Your input is an image (PNG/JPG/JPEG) with text in it and you want the text out |
+| `reduce_image_resize()` | Your input is an image you need to *send* to a multimodal model and you want it shrunk to fewer image tokens |
 | `smart_compress()` | You have a single conversation message (user or LLM) that mixes prose and code/tables/URLs and you want only the prose compressed |
 | `compare()` | You want to prove the compression didn't change the model's answer |
-| `acompress()` / `acompress_structured()` / `areduce_document()` / `areduce_image_ocr()` / `asmart_compress()` | You're doing any of the above inside an async event loop |
+| `acompress()` / `acompress_structured()` / `areduce_document()` / `areduce_image_ocr()` / `asmart_compress()` / `areduce_image_resize()` | You're doing any of the above inside an async event loop |
 
 The mental model: if you start with a **string**, use `compress()` (or `compress_structured()` if parts are sacred). If you start with a **file**, run `reduce_document()` first to get text, then optionally `compress()` that. If you start with an **image**, run `reduce_image_ocr()` to get text, then optionally `compress()` that. If you're compressing a **conversation history**, use `smart_compress()` on each message. When you want to know what it cost you in quality, run `compare()`.
 
@@ -380,6 +382,48 @@ lean = compress(text,
 ### A note on performance
 
 The first call builds an OCR reader, which loads the detection and recognition models — slow the first time (and it downloads the weights once). After that the reader is cached per language set, so subsequent calls in the same process are fast. If you're processing a batch, reuse the same `languages` argument so you hit the cache, and reach for the async variant below to run several images concurrently.
+
+## reduce_image_resize: shrink an image
+
+`reduce_image_ocr()` is for images whose *text* is all you want. But sometimes the **image itself** is what you need to send to a multimodal model — a diagram, a chart, a screenshot where the visual layout matters. There you still pay image tokens, and those tokens scale with the image's pixel dimensions. If the image is larger than the model actually reads at full resolution, those extra pixels are pure waste.
+
+`reduce_image_resize()` shrinks an image so its long edge is at most 512 pixels, preserving aspect ratio, and hands you back the resized image. Image in, image out. At 512px on the long edge, the four major providers (Claude, ChatGPT, Gemini, Copilot) all hit their minimum image-token floor, so there's nothing to gain from sending anything larger. Images already within the limit are returned unchanged.
+
+### Basic usage
+
+```python
+from less_tokens import reduce_image_resize
+
+small = reduce_image_resize("big_photo.jpg")
+print(small.size)          # e.g. (512, 384)
+small.save("small_photo.png")
+```
+
+Pass an image, get a smaller `PIL.Image` back. Call `.save(...)` to write it to disk, or hand it straight to your multimodal API.
+
+### What you can pass as the image
+
+Same flexible inputs as `reduce_image_ocr()`:
+
+| Input type | Example |
+|------------|---------|
+| File path (str or `Path`) | `reduce_image_resize("page.jpg")` |
+| Raw bytes | `reduce_image_resize(image_bytes)` |
+| A file-like object | `reduce_image_resize(open("p.png", "rb"))` — also a web-upload object or `io.BytesIO` |
+| A `PIL.Image` | `reduce_image_resize(Image.open("p.png"))` |
+
+PNG, JPG, and JPEG are the primary targets; BMP, TIFF, WebP, and GIF also work.
+
+### Parameters
+
+| Parameter | What it does |
+|-----------|--------------|
+| `image` | The image to shrink (any of the input types above). |
+| `long_edge` | Target size for the longer side, in pixels. Default `512`. Raise or lower it to trade image quality against token cost. |
+
+### How it resizes
+
+If the long edge is larger than `long_edge`, the image is scaled down with LANCZOS resampling and then lightly sharpened with an unsharp mask to recover detail lost in the downscale. EXIF orientation is honoured and the colour mode is normalised. If the long edge already fits, the image comes back unchanged.
 
 ## compress_structured: protect the parts that matter
 
@@ -678,6 +722,7 @@ If your use case runs inside an async web server or processes prompts in large c
 | `compress_structured()` | `acompress_structured()` |
 | `reduce_document()` | `areduce_document()` |
 | `reduce_image_ocr()` | `areduce_image_ocr()` |
+| `reduce_image_resize()` | `areduce_image_resize()` |
 | `smart_compress()` | `asmart_compress()` |
 
 ```python
