@@ -47,6 +47,7 @@ from less_tokens import (
     compress_structured,
     reduce_document,
     reduce_image_ocr,
+    reduce_image_resize,
     smart_compress,
 )
 
@@ -284,6 +285,70 @@ async def do_reduce_image(file: UploadFile = File(...)) -> Dict[str, Any]:
         "markdown_chars": len(markdown),
     }
 
+@app.post("/reduce_image_resize")
+async def do_reduce_image_resize(
+    file: UploadFile = File(...),
+    long_edge: int = Form(512),
+    fmt: str = Form("PNG"),            # PNG | JPEG | WEBP
+    as_base64: str = Form("false"),    # "true" -> JSON with base64 instead of raw bytes
+):
+    """Image -> same image, long edge capped at `long_edge` px."""
+    import base64
+    import io
+
+    from fastapi.responses import JSONResponse, Response
+
+    data = await file.read()           # reduce_image_resize accepts raw bytes; no temp file
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty upload.")
+
+    try:
+        im = await run_in_threadpool(
+            lambda: reduce_image_resize(data, long_edge=int(long_edge))
+        )
+
+        out_fmt = (fmt or "PNG").upper()
+        if out_fmt in ("JPG", "JPEG"):
+            out_fmt = "JPEG"
+        if out_fmt not in ("PNG", "JPEG", "WEBP"):
+            out_fmt = "PNG"
+        if out_fmt == "JPEG" and im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGB")     # JPEG has no alpha channel
+
+        buf = io.BytesIO()
+        im.save(buf, format=out_fmt)
+        raw = buf.getvalue()
+        w, h = im.size
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()          # full trace in the server console
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not resize '{file.filename}': {type(exc).__name__}: {exc}",
+        )
+
+    media = "image/jpeg" if out_fmt == "JPEG" else f"image/{out_fmt.lower()}"
+
+    if str(as_base64).lower() in ("true", "1", "yes"):
+        return JSONResponse({
+            "filename": file.filename,
+            "width": w,
+            "height": h,
+            "bytes": len(raw),
+            "media_type": media,
+            "image_base64": base64.b64encode(raw).decode("ascii"),
+        })
+
+    return Response(
+        content=raw,
+        media_type=media,
+        headers={
+            "X-Image-Width": str(w),
+            "X-Image-Height": str(h),
+            "X-Image-Bytes": str(len(raw)),
+            "Content-Disposition": f'inline; filename="resized.{out_fmt.lower()}"',
+        },
+    )
 
 # ---------------------------------------------------------------------------
 # Entry point (console script: less-tokens-serve)
