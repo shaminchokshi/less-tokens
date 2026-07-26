@@ -90,7 +90,7 @@ from .structured import (
 from .smart_compress import smart_compress, asmart_compress
 from .resize import reduce_image_resize, areduce_image_resize
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 __all__ = [
     "compress",
     "compare",
